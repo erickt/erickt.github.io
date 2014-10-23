@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd" xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>http://erickt.github.io/blog/2012/07/29/rust-for-ragel/</loc>
+    <lastmod>2012-07-29T10:20:00-07:00</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>http://erickt.github.io/blog/2012/07/05/meal-ready-to-eat-a-web-framework-for-rust/</loc>
+    <lastmod>2012-07-05T08:55:00-07:00</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>http://erickt.github.io/blog/archives/</loc>
+    <lastmod>2014-10-22T20:26:38-07:00</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>http://erickt.github.io/</loc>
+    <lastmod>2014-10-22T20:26:38-07:00</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>

@@ -1,107 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
 
-<!DOCTYPE html>
-<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
-<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
-<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
-<head>
-  <meta charset="utf-8">
-  <title>Tilting at Rabbit Holes</title>
-  <meta name="author" content="Erick Tryzelaar">
-
-  
-  <meta name="description" content="I&rsquo;ve written a bunch of simple parsers for Rust, and it&rsquo;s starting to get a
-little obnoxious. So I added a Rust backend to the
-Ragel &hellip;">
-  
-
-  <!-- http://t.co/dKP3o1e -->
-  <meta name="HandheldFriendly" content="True">
-  <meta name="MobileOptimized" content="320">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-
-  
-  <link rel="canonical" href="http://erickt.github.io">
-  <link href="/favicon.png" rel="icon">
-  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
-  <link href="/atom.xml" rel="alternate" title="Tilting at Rabbit Holes" type="application/atom+xml">
-  <script src="/javascripts/modernizr-2.0.js"></script>
-  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
-  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
-  <script src="/javascripts/octopress.js" type="text/javascript"></script>
-  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
-<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
-<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
-
-  
-  <script type="text/javascript">
-    var _gaq = _gaq || [];
-    _gaq.push(['_setAccount', 'UA-32180054-1']);
-    _gaq.push(['_trackPageview']);
-
-    (function() {
-      var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-      ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
-      var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-    })();
-  </script>
-
-
-</head>
-
-<body   >
-  <header role="banner"><hgroup>
-  <h1><a href="/">Tilting at Rabbit Holes</a></h1>
-  
-    <h2>A poorly updated blog about what I&#8217;m working on</h2>
-  
-</hgroup>
-
-</header>
-  <nav role="navigation"><ul class="subscription" data-subscription="rss">
-  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
-  
-</ul>
-  
-<form action="https://www.google.com/search" method="get">
-  <fieldset role="search">
-    <input type="hidden" name="q" value="site:erickt.github.io" />
-    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
-  </fieldset>
-</form>
-  
-<ul class="main-navigation">
-  <li><a href="/">Blog</a></li>
-  <li><a href="/blog/archives">Archives</a></li>
-</ul>
-
-</nav>
-  <div id="main">
-    <div id="content">
-      <div class="blog-index">
-  
-  
-  
-    <article>
-      
-  <header>
+  <title><![CDATA[Tilting at Rabbit Holes]]></title>
+  <link href="http://erickt.github.io/atom.xml" rel="self"/>
+  <link href="http://erickt.github.io/"/>
+  <updated>2014-10-22T20:26:38-07:00</updated>
+  <id>http://erickt.github.io/</id>
+  <author>
+    <name><![CDATA[Erick Tryzelaar]]></name>
     
-      <h1 class="entry-title"><a href="/blog/2012/07/29/rust-for-ragel/">Rust for Ragel</a></h1>
-    
-    
-      <p class="meta">
-        
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
 
-
-
-
-<time class='entry-date' datetime='2012-07-29T10:20:00-07:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>29</span><span class='date-suffix'>th</span>, <span class='date-year'>2012</span></span> <span class='time'>10:20 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>I&rsquo;ve written a bunch of simple parsers for Rust, and it&rsquo;s starting to get a
+  
+  <entry>
+    <title type="html"><![CDATA[Rust for Ragel]]></title>
+    <link href="http://erickt.github.io/blog/2012/07/29/rust-for-ragel/"/>
+    <updated>2012-07-29T10:20:00-07:00</updated>
+    <id>http://erickt.github.io/blog/2012/07/29/rust-for-ragel</id>
+    <content type="html"><![CDATA[<p>I&rsquo;ve written a bunch of simple parsers for Rust, and it&rsquo;s starting to get a
 little obnoxious. So I added a Rust backend to the
 <a href="http://www.complang.org/ragel/">Ragel State Machine Compiler</a>.
 You can find my fork <a href="https://github.com/erickt/ragel">here</a>. I&rsquo;m waiting for
@@ -216,35 +133,15 @@ optimize calls into tailcalls.</p>
 
 <p>Unless I&rsquo;m doing something glaringly wrong, it seems likely that we are going
 to need some compiler help before these performance issues get solved.</p>
-</div>
+]]></content>
+  </entry>
   
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2012/07/05/meal-ready-to-eat-a-web-framework-for-rust/">Meal, Ready-to-Eat: A Web Framework for Rust</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2012-07-05T08:55:00-07:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>5</span><span class='date-suffix'>th</span>, <span class='date-year'>2012</span></span> <span class='time'>8:55 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>I&rsquo;ve been putting this off for far too long. For the last three months I&rsquo;ve
+  <entry>
+    <title type="html"><![CDATA[Meal, Ready-to-Eat: A Web Framework for Rust]]></title>
+    <link href="http://erickt.github.io/blog/2012/07/05/meal-ready-to-eat-a-web-framework-for-rust/"/>
+    <updated>2012-07-05T08:55:00-07:00</updated>
+    <id>http://erickt.github.io/blog/2012/07/05/meal-ready-to-eat-a-web-framework-for-rust</id>
+    <content type="html"><![CDATA[<p>I&rsquo;ve been putting this off for far too long. For the last three months I&rsquo;ve
 been working on <a href="https://github.com/erickt/mre">Meal, Ready-to-Eat</a>, a web
 framework for the <a href="http://rust-lang.org">Rust programming language</a>. I call it
 MRE. Rust didn&rsquo;t have a TCP stack when I started the project, so instead I
@@ -879,101 +776,7 @@ on how to make this per-request data:</p>
 
 <p>See the <a href="https://github.com/erickt/mre/tree/master/examples/blog">blog</a> for a
 complete example.</p>
-</div>
+]]></content>
+  </entry>
   
-  
-
-
-    </article>
-  
-  <div class="pagination">
-    
-    <a href="/blog/archives">Blog Archives</a>
-    
-  </div>
-</div>
-<aside class="sidebar">
-  
-    <section>
-  <h1>Recent Posts</h1>
-  <ul id="recent_posts">
-    
-      <li class="post">
-        <a href="/blog/2012/07/29/rust-for-ragel/">Rust for Ragel</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2012/07/05/meal-ready-to-eat-a-web-framework-for-rust/">Meal, Ready-to-Eat: A Web Framework for Rust</a>
-      </li>
-    
-  </ul>
-</section>
-
-<section>
-  <h1>GitHub Repos</h1>
-  <ul id="gh_repos">
-    <li class="loading">Status updating&#8230;</li>
-  </ul>
-  
-  <a href="https://github.com/erickt">@erickt</a> on GitHub
-  
-  <script type="text/javascript">
-    $(document).ready(function(){
-        if (!window.jXHR){
-            var jxhr = document.createElement('script');
-            jxhr.type = 'text/javascript';
-            jxhr.src = '/javascripts/libs/jXHR.js';
-            var s = document.getElementsByTagName('script')[0];
-            s.parentNode.insertBefore(jxhr, s);
-        }
-
-        github.showRepos({
-            user: 'erickt',
-            count: 0,
-            skip_forks: true,
-            target: '#gh_repos'
-        });
-    });
-  </script>
-  <script src="/javascripts/github.js" type="text/javascript"> </script>
-</section>
-
-
-
-
-
-  
-</aside>
-
-    </div>
-  </div>
-  <footer role="contentinfo"><p>
-  Copyright &copy; 2014 - Erick Tryzelaar -
-  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
-</p>
-
-</footer>
-  
-
-
-
-
-
-
-
-  <script type="text/javascript">
-    (function(){
-      var twitterWidgets = document.createElement('script');
-      twitterWidgets.type = 'text/javascript';
-      twitterWidgets.async = true;
-      twitterWidgets.src = '//platform.twitter.com/widgets.js';
-      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
-    })();
-  </script>
-
-
-
-
-
-</body>
-</html>
+</feed>
