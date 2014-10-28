@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: Serialization | Tilting at Rabbit Holes]]></title>
+  <link href="http://erickt.github.io/blog/categories/serialization/atom.xml" rel="self"/>
+  <link href="http://erickt.github.io/"/>
+  <updated>2014-10-28T08:58:59-07:00</updated>
+  <id>http://erickt.github.io/</id>
+  <author>
+    <name><![CDATA[Erick Tryzelaar]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Rewriting Rust Serialization, Part 1]]></title>
+    <link href="http://erickt.github.io/blog/2014/10/28/serialization/"/>
+    <updated>2014-10-28T08:52:18-07:00</updated>
+    <id>http://erickt.github.io/blog/2014/10/28/serialization</id>
+    <content type="html"><![CDATA[<p>Hello everybody! It&rsquo;s been, what, <em>two</em> years since I last blogged? Not my best
+performance, I&rsquo;m sorry to say. So for all of my 3 pageviews that are probably
+bots, I appologize for such a long delay on updating my blog. I got to say I&rsquo;ve
+been pretty inspired by the great <a href="http://jvns.ca/">Julia Evans</a> (who I hope we
+can someday get back to working on rust stuff). She&rsquo;s an epic blogger, and I
+hope I can get somewhere near that speed.</p>
+
+<p>Anyway, on to the post. My main on-again-off-again project this past year has
+been working Rust&rsquo;s generic <a href="http://doc.rust-lang.org/serialize/">serialize</a>
+library. If you haven&rsquo;t played with it yet, it&rsquo;s really nifty. It&rsquo;s a generic
+framework that allows a generic <code>Encoder</code> serialize a generic <code>Encodable</code>, and
+the inverse with <code>Decoder</code> and <code>Decodable</code>. This allows you to write just one
+<code>Encodable</code> impl that can transparently work with our
+<a href="http://doc.rust-lang.org/serialize/">json</a> library,
+<a href="https://github.com/mneumann/rust-msgpack">msgpack</a>,
+<a href="https://github.com/alexcrichton/toml-rs">toml</a>, and etc. It&rsquo;s simple to use
+too in most cases as you can use <code>#[deriving(Encodable, Decodable)]</code> to
+automatically create a implementation for your type. Here&rsquo;s an example:</p>
+
+<pre><code class="rust">extern crate serialize;
+
+use serialize::json;
+
+#[deriving(Encodable, Decodable, Show)]
+struct Employee {
+    name: String,
+}
+
+#[deriving(Encodable, Decodable, Show)]
+struct Company {
+    employees: Vec&lt;Employee&gt;,
+}
+
+fn main() {
+    let company = Company {
+        employees: vec![
+            Employee { name: "Dan".to_string() },
+            Employee { name: "Erin".to_string() },
+            Employee { name: "Jeff".to_string() },
+            Employee { name: "Spencer".to_string() },
+        ],
+    };
+
+    let s = json::encode(&amp;company);
+    let company: Company = json::decode(s.as_slice()).unwrap();
+}
+</code></pre>
+
+<p>There are some downsides to serialize though. Manually implementing can be a
+bit of a pain. Here&rsquo;s the example from before:</p>
+
+<pre><code class="rust">impl&lt;S: Encoder&lt;E&gt;, E&gt; Encodable&lt;S, E&gt; for Employee {
+    fn encode(&amp;self, s: &amp;mut S) -&gt; Result&lt;(), E&gt; {
+        match *self {
+            Employee { name: ref name } =&gt; {
+                s.emit_struct("Employee", 1u, |s| {
+                    s.emit_struct_field("name", 0u, |s| name.encode(s))
+                })
+            }
+        }
+    }
+}
+
+impl&lt;D: Decoder&lt;E&gt;, E&gt; Decodable&lt;D, E&gt; for Employee {
+    fn decode(d: &amp;mut D) -&gt; Result&lt;Employee, E&gt; {
+        d.read_struct("Employee", 1u, |d| {
+            Ok(Employee {
+                name: {
+                    try!(d.read_struct_field("name", 0u, |d| {
+                        Decodable::decode(d)
+                    }))
+                }
+            })
+        })
+    }
+}
+</code></pre>
+
+<p>As you can see, parsing compound structures requires these recursive closure
+calls in order to perform the handshake between the <code>Encoder</code> and the
+<code>Encodable</code>. A couple people have run into bugs in the past where they didn&rsquo;t
+implement this pattern, which results in some confusing bugs. Furthermore, LLVM
+isn&rsquo;t great at inlining these recursive calls, so <code>serialize</code> impls tend to not
+perform well.</p>
+
+<p>That&rsquo;s not the worst of it though. The real problem is that there are types
+that can implement <code>Encodable</code>, there&rsquo;s no way to write a <code>Decodable</code>
+implementation. They&rsquo;re pretty common too. For example, the
+<code>serialize::json::Json</code> type:</p>
+
+<pre><code class="rust">pub enum Json {
+    I64(i64),
+    U64(u64),
+    F64(f64),
+    String(string::String),
+    Boolean(bool),
+    List(JsonList),
+    Object(JsonObject),
+    Null,
+}
+
+pub type JsonList = Vec&lt;Json&gt;;
+pub type JsonObject = TreeMap&lt;string::String, Json&gt;;
+</code></pre>
+
+<p>The <code>Json</code> value can represent any value that&rsquo;s in a JSON string. Implied in
+this is the notion that the <code>Decodable</code> has to look ahead to see what the next
+value is so it can decide which <code>Json</code> variant to construct. Unfortunately our
+current <code>Decoder</code> infrastructure doesn&rsquo;t support lookahead. The way the
+<code>Decoder</code>/<code>Decodable</code> handshake works is essentially:</p>
+
+<ul>
+<li><code>Decodable</code> asks for a struct named <code>"Employee"</code>.</li>
+<li><code>Decodable</code> asks for a field named <code>"name"</code>.</li>
+<li><code>Decodable</code> asks for a value of type <code>String</code>.</li>
+<li><code>Decodable</code> asks for a field named <code>"age"</code>.</li>
+<li><code>Decodable</code> asks for a value of type <code>uint</code>.</li>
+<li>&hellip;</li>
+</ul>
+
+
+<p>Any deviation from this pattern results in an error. There isn&rsquo;t a way for the
+<code>Decodable</code> to ask what is the type of the next value, so this is why we
+serialize generic enums by explicitly tagging the variant, as in:</p>
+
+<pre><code>extern crate serialize;
+
+use serialize::json;
+
+#[deriving(Encodable, Decodable, Show)]
+enum Animal {
+    Dog(uint),
+    Frog(String, uint),
+}
+
+fn main() {
+    let animal = Frog("Frank".to_string(), 349);
+
+    let s = json::encode(&amp;animal);
+
+    println!("{}", s);
+    // prints {"variant":"Frog","fields":["Frank",349]}
+}
+</code></pre>
+
+<p>That&rsquo;s probably good enough for now. In my next post I&rsquo;ll go into in my
+approach to fix this in <a href="https://github.com/erickt/rust-serde">serde</a>.</p>
+]]></content>
+  </entry>
+  
+</feed>

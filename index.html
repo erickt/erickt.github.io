@@ -9,9 +9,8 @@
   <meta name="author" content="Erick Tryzelaar">
 
   
-  <meta name="description" content="I&rsquo;ve written a bunch of simple parsers for Rust, and it&rsquo;s starting to get a
-little obnoxious. So I added a Rust backend to the
-Ragel &hellip;">
+  <meta name="description" content="Hello everybody! It&rsquo;s been, what, two years since I last blogged? Not my best
+performance, I&rsquo;m sorry to say. So for all of my 3 pageviews &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -79,6 +78,268 @@ Ragel &hellip;">
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/10/28/serialization/">Rewriting Rust Serialization, Part 1</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-10-28T08:52:18-07:00'><span class='date'><span class='date-month'>Oct</span> <span class='date-day'>28</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>8:52 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>Hello everybody! It&rsquo;s been, what, <em>two</em> years since I last blogged? Not my best
+performance, I&rsquo;m sorry to say. So for all of my 3 pageviews that are probably
+bots, I appologize for such a long delay on updating my blog. I got to say I&rsquo;ve
+been pretty inspired by the great <a href="http://jvns.ca/">Julia Evans</a> (who I hope we
+can someday get back to working on rust stuff). She&rsquo;s an epic blogger, and I
+hope I can get somewhere near that speed.</p>
+
+<p>Anyway, on to the post. My main on-again-off-again project this past year has
+been working Rust&rsquo;s generic <a href="http://doc.rust-lang.org/serialize/">serialize</a>
+library. If you haven&rsquo;t played with it yet, it&rsquo;s really nifty. It&rsquo;s a generic
+framework that allows a generic <code>Encoder</code> serialize a generic <code>Encodable</code>, and
+the inverse with <code>Decoder</code> and <code>Decodable</code>. This allows you to write just one
+<code>Encodable</code> impl that can transparently work with our
+<a href="http://doc.rust-lang.org/serialize/">json</a> library,
+<a href="https://github.com/mneumann/rust-msgpack">msgpack</a>,
+<a href="https://github.com/alexcrichton/toml-rs">toml</a>, and etc. It&rsquo;s simple to use
+too in most cases as you can use <code>#[deriving(Encodable, Decodable)]</code> to
+automatically create a implementation for your type. Here&rsquo;s an example:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">serialize</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="kn">use</span> <span class="n">serialize</span><span class="o">::</span><span class="n">json</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#[deriving(Encodable, Decodable, Show)]</span>
+</span><span class='line'><span class="k">struct</span> <span class="n">Employee</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">name</span><span class="o">:</span> <span class="n">String</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#[deriving(Encodable, Decodable, Show)]</span>
+</span><span class='line'><span class="k">struct</span> <span class="n">Company</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">employees</span><span class="o">:</span> <span class="n">Vec</span><span class="o">&lt;</span><span class="n">Employee</span><span class="o">&gt;</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">fn</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">company</span> <span class="o">=</span> <span class="n">Company</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">employees</span><span class="o">:</span> <span class="n">vec</span><span class="o">!</span><span class="p">[</span>
+</span><span class='line'>            <span class="n">Employee</span> <span class="p">{</span> <span class="n">name</span><span class="o">:</span> <span class="s">&quot;Dan&quot;</span><span class="p">.</span><span class="n">to_string</span><span class="p">()</span> <span class="p">},</span>
+</span><span class='line'>            <span class="n">Employee</span> <span class="p">{</span> <span class="n">name</span><span class="o">:</span> <span class="s">&quot;Erin&quot;</span><span class="p">.</span><span class="n">to_string</span><span class="p">()</span> <span class="p">},</span>
+</span><span class='line'>            <span class="n">Employee</span> <span class="p">{</span> <span class="n">name</span><span class="o">:</span> <span class="s">&quot;Jeff&quot;</span><span class="p">.</span><span class="n">to_string</span><span class="p">()</span> <span class="p">},</span>
+</span><span class='line'>            <span class="n">Employee</span> <span class="p">{</span> <span class="n">name</span><span class="o">:</span> <span class="s">&quot;Spencer&quot;</span><span class="p">.</span><span class="n">to_string</span><span class="p">()</span> <span class="p">},</span>
+</span><span class='line'>        <span class="p">],</span>
+</span><span class='line'>    <span class="p">};</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">s</span> <span class="o">=</span> <span class="n">json</span><span class="o">::</span><span class="n">encode</span><span class="p">(</span><span class="o">&amp;</span><span class="n">company</span><span class="p">);</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">company</span><span class="o">:</span> <span class="n">Company</span> <span class="o">=</span> <span class="n">json</span><span class="o">::</span><span class="n">decode</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">as_slice</span><span class="p">()).</span><span class="n">unwrap</span><span class="p">();</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>There are some downsides to serialize though. Manually implementing can be a
+bit of a pain. Here&rsquo;s the example from before:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="n">S</span><span class="o">:</span> <span class="n">Encoder</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="n">Encodable</span><span class="o">&lt;</span><span class="n">S</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">Employee</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">encode</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span> <span class="n">s</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">S</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">match</span> <span class="o">*</span><span class="bp">self</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">Employee</span> <span class="p">{</span> <span class="n">name</span><span class="o">:</span> <span class="k">ref</span> <span class="n">name</span> <span class="p">}</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">s</span><span class="p">.</span><span class="n">emit_struct</span><span class="p">(</span><span class="s">&quot;Employee&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="k">u</span><span class="p">,</span> <span class="o">|</span><span class="n">s</span><span class="o">|</span> <span class="p">{</span>
+</span><span class='line'>                    <span class="n">s</span><span class="p">.</span><span class="n">emit_struct_field</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="k">u</span><span class="p">,</span> <span class="o">|</span><span class="n">s</span><span class="o">|</span> <span class="n">name</span><span class="p">.</span><span class="n">encode</span><span class="p">(</span><span class="n">s</span><span class="p">))</span>
+</span><span class='line'>                <span class="p">})</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="n">D</span><span class="o">:</span> <span class="n">Decoder</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="n">Decodable</span><span class="o">&lt;</span><span class="n">D</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">Employee</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">decode</span><span class="p">(</span><span class="n">d</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">D</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Employee</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">d</span><span class="p">.</span><span class="n">read_struct</span><span class="p">(</span><span class="s">&quot;Employee&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="k">u</span><span class="p">,</span> <span class="o">|</span><span class="n">d</span><span class="o">|</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nb">Ok</span><span class="p">(</span><span class="n">Employee</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">name</span><span class="o">:</span> <span class="p">{</span>
+</span><span class='line'>                    <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">d</span><span class="p">.</span><span class="n">read_struct_field</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="k">u</span><span class="p">,</span> <span class="o">|</span><span class="n">d</span><span class="o">|</span> <span class="p">{</span>
+</span><span class='line'>                        <span class="n">Decodable</span><span class="o">::</span><span class="n">decode</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+</span><span class='line'>                    <span class="p">}))</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>            <span class="p">})</span>
+</span><span class='line'>        <span class="p">})</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>As you can see, parsing compound structures requires these recursive closure
+calls in order to perform the handshake between the <code>Encoder</code> and the
+<code>Encodable</code>. A couple people have run into bugs in the past where they didn&rsquo;t
+implement this pattern, which results in some confusing bugs. Furthermore, LLVM
+isn&rsquo;t great at inlining these recursive calls, so <code>serialize</code> impls tend to not
+perform well.</p>
+
+<p>That&rsquo;s not the worst of it though. The real problem is that there are types
+that can implement <code>Encodable</code>, there&rsquo;s no way to write a <code>Decodable</code>
+implementation. They&rsquo;re pretty common too. For example, the
+<code>serialize::json::Json</code> type:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">enum</span> <span class="n">Json</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">I64</span><span class="p">(</span><span class="kt">i64</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">U64</span><span class="p">(</span><span class="kt">u64</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">F64</span><span class="p">(</span><span class="kt">f64</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">String</span><span class="p">(</span><span class="n">string</span><span class="o">::</span><span class="n">String</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">Boolean</span><span class="p">(</span><span class="kt">bool</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">List</span><span class="p">(</span><span class="n">JsonList</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">Object</span><span class="p">(</span><span class="n">JsonObject</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">Null</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">pub</span> <span class="k">type</span> <span class="n">JsonList</span> <span class="o">=</span> <span class="n">Vec</span><span class="o">&lt;</span><span class="n">Json</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'><span class="k">pub</span> <span class="k">type</span> <span class="n">JsonObject</span> <span class="o">=</span> <span class="n">TreeMap</span><span class="o">&lt;</span><span class="n">string</span><span class="o">::</span><span class="n">String</span><span class="p">,</span> <span class="n">Json</span><span class="o">&gt;</span><span class="p">;</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>Json</code> value can represent any value that&rsquo;s in a JSON string. Implied in
+this is the notion that the <code>Decodable</code> has to look ahead to see what the next
+value is so it can decide which <code>Json</code> variant to construct. Unfortunately our
+current <code>Decoder</code> infrastructure doesn&rsquo;t support lookahead. The way the
+<code>Decoder</code>/<code>Decodable</code> handshake works is essentially:</p>
+
+<ul>
+<li><code>Decodable</code> asks for a struct named <code>"Employee"</code>.</li>
+<li><code>Decodable</code> asks for a field named <code>"name"</code>.</li>
+<li><code>Decodable</code> asks for a value of type <code>String</code>.</li>
+<li><code>Decodable</code> asks for a field named <code>"age"</code>.</li>
+<li><code>Decodable</code> asks for a value of type <code>uint</code>.</li>
+<li>&hellip;</li>
+</ul>
+
+
+<p>Any deviation from this pattern results in an error. There isn&rsquo;t a way for the
+<code>Decodable</code> to ask what is the type of the next value, so this is why we
+serialize generic enums by explicitly tagging the variant, as in:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">serialize</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="kn">use</span> <span class="n">serialize</span><span class="o">::</span><span class="n">json</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#[deriving(Encodable, Decodable, Show)]</span>
+</span><span class='line'><span class="k">enum</span> <span class="n">Animal</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">Dog</span><span class="p">(</span><span class="kt">uint</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">Frog</span><span class="p">(</span><span class="n">String</span><span class="p">,</span> <span class="kt">uint</span><span class="p">),</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">fn</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">animal</span> <span class="o">=</span> <span class="n">Frog</span><span class="p">(</span><span class="s">&quot;Frank&quot;</span><span class="p">.</span><span class="n">to_string</span><span class="p">(),</span> <span class="mi">349</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">s</span> <span class="o">=</span> <span class="n">json</span><span class="o">::</span><span class="n">encode</span><span class="p">(</span><span class="o">&amp;</span><span class="n">animal</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="nb">println</span><span class="o">!</span><span class="p">(</span><span class="s">&quot;{}&quot;</span><span class="p">,</span> <span class="n">s</span><span class="p">);</span>
+</span><span class='line'>    <span class="c1">// prints {&quot;variant&quot;:&quot;Frog&quot;,&quot;fields&quot;:[&quot;Frank&quot;,349]}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>That&rsquo;s probably good enough for now. In my next post I&rsquo;ll go into in my
+approach to fix this in <a href="https://github.com/erickt/rust-serde">serde</a>.</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -897,6 +1158,10 @@ complete example.</p>
     <section>
   <h1>Recent Posts</h1>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/10/28/serialization/">Rewriting Rust Serialization, Part 1</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2012/07/29/rust-for-ragel/">Rust for Ragel</a>
