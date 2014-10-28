@@ -1,2 +1,20 @@
 // This File is imported last, and will override other styles in the cascade
 // Add styles here to make changes without digging in too much
+
+table {
+	border: 1px solid #dddddd;
+}
+
+table th, table td {
+	padding-left: 5px;
+	padding-right: 5px;
+}
+
+table th {
+	border-bottom: 1px solid #dddddd;
+	font-weight: bold;
+}
+
+table td {
+	border-bottom: 1px dashed #dddddd;
+}
