@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Serialization | Tilting at Rabbit Holes]]></title>
   <link href="http://erickt.github.io/blog/categories/serialization/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2014-10-28T08:58:59-07:00</updated>
+  <updated>2014-11-03T09:36:32-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -12,6 +12,153 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Rewriting Rust Serialization, Part 2: Performance]]></title>
+    <link href="http://erickt.github.io/blog/2014/11/03/performance/"/>
+    <updated>2014-11-03T06:38:38-08:00</updated>
+    <id>http://erickt.github.io/blog/2014/11/03/performance</id>
+    <content type="html"><![CDATA[<p>As I said in the <a href="http://erickt.github.io/blog/2014/10/28/serialization/">last post</a>,
+Rust&rsquo;s <code>serialize</code> library, specifically <code>serialize::json</code> is pretty slow.
+Back when I started this project a number of months ago, I wanted to benchmark
+to see how we compared to some other languages. There are a bunch of JSON
+benchmarks, but the one I chose was Cloudflare&rsquo;s Go language.
+<a href="https://github.com/cloudflare/goser">Goser</a>, mainly because it was using a
+complex real world log structure, and they did the hard work of implementing
+benchmarks for <a href="http://golang.org/pkg/encoding/json">encoding/json</a>,
+<a href="http://code.google.com/p/goprotobuf/">goprotobuf</a>,
+<a href="http://code.google.com/p/gogoprotobuf/">gogoprotobuf</a>, and
+<a href="https://github.com/glycerine/go-capnproto">go-capnproto</a>. I also included the
+Go <a href="https://github.com/pquerna/ffjson">ffjson</a> and C++
+<a href="https://github.com/erickt/rapidjson/blob/master/log.cc">rapidjson</a>, which
+both claim to be the fastest JSON libraries for those languages. Here are the
+results I got:</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library             </th>
+<th> format           </th>
+<th> serialization (MB/s) </th>
+<th> deserialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> C++      </td>
+<td> rapidjson           </td>
+<td> JSON             </td>
+<td> 294                  </td>
+<td> 164 (DOM) / 192 (SAX)  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> encoding/json       </td>
+<td> JSON             </td>
+<td> 71.47                </td>
+<td> 25.09                  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> ffjson              </td>
+<td> JSON             </td>
+<td> 156.67               </td>
+<td> (not supported)        </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> goprotobuf          </td>
+<td> Protocol Buffers </td>
+<td> 148.78               </td>
+<td> 99.57                  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> gogoprotobuf        </td>
+<td> Protocol Buffers </td>
+<td> 519.48               </td>
+<td> 319.40                 </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> go-capnproto        </td>
+<td> Cap&#8217;n Proto      </td>
+<td> 3419.54              </td>
+<td> 665.35                 </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> serialize::json     </td>
+<td> Rust             </td>
+<td> 40-ish               </td>
+<td> 10-ish                 </td>
+</tr>
+</tbody>
+</table>
+
+
+<p>Notes:</p>
+
+<ul>
+<li><code>rapidjson</code> supports both DOM-style and SAX-style deserializing. DOM-style
+means deserializing into a generic object, then from there into the final
+object, SAX-style means a callback approach where a callback handler is
+called for each JSON token.</li>
+<li>Go&rsquo;s <code>encoding/json</code> uses reflection to serialize arbitrary values. <code>ffjson</code>
+uses code generation to get it&rsquo;s serialization sped, but it doesn&rsquo;t implement
+deserialization.</li>
+<li>both <code>goprotobuf</code> and <code>gogoprotobuf</code> use code generation, but gogoprotobuf
+uses Protocol Buffer&rsquo;s extension support to do cheaper serialization.</li>
+<li>Cap&#8217;n Proto doesn&rsquo;t really do serialization, but lays the serialized data out
+just like it is in memory so it has nearly zero serialization speed.</li>
+<li>The Rust numbers are from a couple months ago and I couldn&rsquo;t track down
+the exact numbers.</li>
+</ul>
+
+
+<p>So. Yikes. Not only are we no where near <code>rapidjson</code>, we were being soundly
+beaten by Go&rsquo;s reflection-based framework <code>encoding/json</code>.  Even worse, our
+compile time was at least 10 times theirs. So, not pretty at all.</p>
+
+<p>But that was a couple months ago. Between then and now, Patrick Walton, Luqman
+Aden, myself, and probably lots others found and fixed a number of bugs across
+<code>serialize::json</code>, <code>std::io</code>, generic function calls, and more. All this work
+got us to more than double our performance:</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library           </th>
+<th> serialization (MB/s) </th>
+<th> deserialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> Rust     </td>
+<td> serialize::json   </td>
+<td> 117                  </td>
+<td> 25                     </td>
+</tr>
+</tbody>
+</table>
+
+
+<p>We&rsquo;re (kind of) beating Go! At least the builtin reflection-based solution.
+Better, but not great. I think our challenge is those dang closures. While LLVM
+can optimize simple closures, it seems to have a lot of trouble with all these
+recursive closure calls. While having finished unboxed closures might finally
+let us break through this performance bottleneck, it&rsquo;s not guaranteed.</p>
+
+<p>All in all, this, and the representational problems from
+<a href="http://erickt.github.io/blog/2014/10/28/serialization/">post 1</a> make it pretty
+obvious we got some fundamental issues here and we need to use an alternative
+solution. Next post I&rsquo;ll start getting into the details of the design of
+<a href="https://github.com/erickt/rust-serde">serde</a>.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Rewriting Rust Serialization, Part 1]]></title>

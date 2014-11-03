@@ -1,0 +1,380 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Rewriting Rust Serialization, Part 2: Performance - Tilting at Rabbit Holes</title>
+  <meta name="author" content="Erick Tryzelaar">
+
+  
+  <meta name="description" content="As I said in the last post,
+Rust&rsquo;s serialize library, specifically serialize::json is pretty slow.
+Back when I started this project a number of &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://erickt.github.io/blog/2014/11/03/performance">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="Tilting at Rabbit Holes" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+  <script type="text/javascript">
+    var _gaq = _gaq || [];
+    _gaq.push(['_setAccount', 'UA-32180054-1']);
+    _gaq.push(['_trackPageview']);
+
+    (function() {
+      var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+      ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+      var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+    })();
+  </script>
+
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">Tilting at Rabbit Holes</a></h1>
+  
+    <h2>A poorly updated blog about what I&#8217;m working on</h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="https://www.google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:erickt.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Rewriting Rust Serialization, Part 2: Performance</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-11-03T06:38:38-08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2014</span></span> <span class='time'>6:38 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>As I said in the <a href="http://erickt.github.io/blog/2014/10/28/serialization/">last post</a>,
+Rust&rsquo;s <code>serialize</code> library, specifically <code>serialize::json</code> is pretty slow.
+Back when I started this project a number of months ago, I wanted to benchmark
+to see how we compared to some other languages. There are a bunch of JSON
+benchmarks, but the one I chose was Cloudflare&rsquo;s Go language.
+<a href="https://github.com/cloudflare/goser">Goser</a>, mainly because it was using a
+complex real world log structure, and they did the hard work of implementing
+benchmarks for <a href="http://golang.org/pkg/encoding/json">encoding/json</a>,
+<a href="http://code.google.com/p/goprotobuf/">goprotobuf</a>,
+<a href="http://code.google.com/p/gogoprotobuf/">gogoprotobuf</a>, and
+<a href="https://github.com/glycerine/go-capnproto">go-capnproto</a>. I also included the
+Go <a href="https://github.com/pquerna/ffjson">ffjson</a> and C++
+<a href="https://github.com/erickt/rapidjson/blob/master/log.cc">rapidjson</a>, which
+both claim to be the fastest JSON libraries for those languages. Here are the
+results I got:</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library             </th>
+<th> format           </th>
+<th> serialization (MB/s) </th>
+<th> deserialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> C++      </td>
+<td> rapidjson           </td>
+<td> JSON             </td>
+<td> 294                  </td>
+<td> 164 (DOM) / 192 (SAX)  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> encoding/json       </td>
+<td> JSON             </td>
+<td> 71.47                </td>
+<td> 25.09                  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> ffjson              </td>
+<td> JSON             </td>
+<td> 156.67               </td>
+<td> (not supported)        </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> goprotobuf          </td>
+<td> Protocol Buffers </td>
+<td> 148.78               </td>
+<td> 99.57                  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> gogoprotobuf        </td>
+<td> Protocol Buffers </td>
+<td> 519.48               </td>
+<td> 319.40                 </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> go-capnproto        </td>
+<td> Cap&#8217;n Proto      </td>
+<td> 3419.54              </td>
+<td> 665.35                 </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> serialize::json     </td>
+<td> Rust             </td>
+<td> 40-ish               </td>
+<td> 10-ish                 </td>
+</tr>
+</tbody>
+</table>
+
+
+<p>Notes:</p>
+
+<ul>
+<li><code>rapidjson</code> supports both DOM-style and SAX-style deserializing. DOM-style
+means deserializing into a generic object, then from there into the final
+object, SAX-style means a callback approach where a callback handler is
+called for each JSON token.</li>
+<li>Go&rsquo;s <code>encoding/json</code> uses reflection to serialize arbitrary values. <code>ffjson</code>
+uses code generation to get it&rsquo;s serialization sped, but it doesn&rsquo;t implement
+deserialization.</li>
+<li>both <code>goprotobuf</code> and <code>gogoprotobuf</code> use code generation, but gogoprotobuf
+uses Protocol Buffer&rsquo;s extension support to do cheaper serialization.</li>
+<li>Cap&#8217;n Proto doesn&rsquo;t really do serialization, but lays the serialized data out
+just like it is in memory so it has nearly zero serialization speed.</li>
+<li>The Rust numbers are from a couple months ago and I couldn&rsquo;t track down
+the exact numbers.</li>
+</ul>
+
+
+<p>So. Yikes. Not only are we no where near <code>rapidjson</code>, we were being soundly
+beaten by Go&rsquo;s reflection-based framework <code>encoding/json</code>.  Even worse, our
+compile time was at least 10 times theirs. So, not pretty at all.</p>
+
+<p>But that was a couple months ago. Between then and now, Patrick Walton, Luqman
+Aden, myself, and probably lots others found and fixed a number of bugs across
+<code>serialize::json</code>, <code>std::io</code>, generic function calls, and more. All this work
+got us to more than double our performance:</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library           </th>
+<th> serialization (MB/s) </th>
+<th> deserialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> Rust     </td>
+<td> serialize::json   </td>
+<td> 117                  </td>
+<td> 25                     </td>
+</tr>
+</tbody>
+</table>
+
+
+<p>We&rsquo;re (kind of) beating Go! At least the builtin reflection-based solution.
+Better, but not great. I think our challenge is those dang closures. While LLVM
+can optimize simple closures, it seems to have a lot of trouble with all these
+recursive closure calls. While having finished unboxed closures might finally
+let us break through this performance bottleneck, it&rsquo;s not guaranteed.</p>
+
+<p>All in all, this, and the representational problems from
+<a href="http://erickt.github.io/blog/2014/10/28/serialization/">post 1</a> make it pretty
+obvious we got some fundamental issues here and we need to use an alternative
+solution. Next post I&rsquo;ll start getting into the details of the design of
+<a href="https://github.com/erickt/rust-serde">serde</a>.</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Erick Tryzelaar</span></span>
+
+      
+
+
+
+
+<time class='entry-date' datetime='2014-11-03T06:38:38-08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2014</span></span> <span class='time'>6:38 am</span></time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/rust/'>rust</a>, <a class='category' href='/blog/categories/serialization/'>serialization</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://erickt.github.io/blog/2014/11/03/performance/" data-via="" data-counturl="http://erickt.github.io/blog/2014/11/03/performance/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2014/10/28/serialization/" title="Previous Post: Rewriting Rust Serialization, Part 1">&laquo; Rewriting Rust Serialization, Part 1</a>
+      
+      
+    </p>
+  </footer>
+</article>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/11/03/performance/">Rewriting Rust Serialization, Part 2: Performance</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/10/28/serialization/">Rewriting Rust Serialization, Part 1</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2012/07/29/rust-for-ragel/">Rust for Ragel</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2012/07/05/meal-ready-to-eat-a-web-framework-for-rust/">Meal, Ready-to-Eat: A Web Framework for Rust</a>
+      </li>
+    
+  </ul>
+</section>
+
+<section>
+  <h1>GitHub Repos</h1>
+  <ul id="gh_repos">
+    <li class="loading">Status updating&#8230;</li>
+  </ul>
+  
+  <a href="https://github.com/erickt">@erickt</a> on GitHub
+  
+  <script type="text/javascript">
+    $(document).ready(function(){
+        if (!window.jXHR){
+            var jxhr = document.createElement('script');
+            jxhr.type = 'text/javascript';
+            jxhr.src = '/javascripts/libs/jXHR.js';
+            var s = document.getElementsByTagName('script')[0];
+            s.parentNode.insertBefore(jxhr, s);
+        }
+
+        github.showRepos({
+            user: 'erickt',
+            count: 0,
+            skip_forks: true,
+            target: '#gh_repos'
+        });
+    });
+  </script>
+  <script src="/javascripts/github.js" type="text/javascript"> </script>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 - Erick Tryzelaar -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>
