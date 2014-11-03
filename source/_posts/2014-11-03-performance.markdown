@@ -30,7 +30,7 @@ results I got:
 | Go       | goprotobuf          | Protocol Buffers | 148.78               | 99.57                  |
 | Go       | gogoprotobuf        | Protocol Buffers | 519.48               | 319.40                 |
 | Go       | go-capnproto        | Cap'n Proto      | 3419.54              | 665.35                 |
-| Rust     | serialize::json     | Rust             | 40-ish               | 10-ish                 |
+| Rust     | serialize::json     | JSON             | 40-ish               | 10-ish                 |
 
 Notes:
 
@@ -57,9 +57,9 @@ Aden, myself, and probably lots others found and fixed a number of bugs across
 `serialize::json`, `std::io`, generic function calls, and more. All this work
 got us to more than double our performance:
 
-| language | library           | serialization (MB/s) | deserialization (MB/s) |
-| -------- | ----------------- | -------------------- | ---------------------- |
-| Rust     | serialize::json   | 117                  | 25                     |
+| language | library           | format               | serialization (MB/s)   | deserialization (MB/s) |
+| -------- | ----------------- | -------------------- | ---------------------- | ---------------------- |
+| Rust     | serialize::json   | JSON                 | 117                    | 25                     |
 
 We're (kind of) beating Go! At least the builtin reflection-based solution.
 Better, but not great. I think our challenge is those dang closures. While LLVM
