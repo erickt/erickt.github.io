@@ -4,7 +4,7 @@
   <title><![CDATA[Tilting at Rabbit Holes]]></title>
   <link href="http://erickt.github.io/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2014-11-03T09:36:32-08:00</updated>
+  <updated>2014-11-03T12:48:41-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -90,7 +90,7 @@ results I got:</p>
 <tr>
 <td> Rust     </td>
 <td> serialize::json     </td>
-<td> Rust             </td>
+<td> JSON             </td>
 <td> 40-ish               </td>
 <td> 10-ish                 </td>
 </tr>
@@ -131,7 +131,8 @@ got us to more than double our performance:</p>
 <tr>
 <th> language </th>
 <th> library           </th>
-<th> serialization (MB/s) </th>
+<th> format               </th>
+<th> serialization (MB/s)   </th>
 <th> deserialization (MB/s) </th>
 </tr>
 </thead>
@@ -139,7 +140,8 @@ got us to more than double our performance:</p>
 <tr>
 <td> Rust     </td>
 <td> serialize::json   </td>
-<td> 117                  </td>
+<td> JSON                 </td>
+<td> 117                    </td>
 <td> 25                     </td>
 </tr>
 </tbody>
