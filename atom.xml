@@ -4,7 +4,7 @@
   <title><![CDATA[Tilting at Rabbit Holes]]></title>
   <link href="http://erickt.github.io/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2014-11-13T09:11:41-08:00</updated>
+  <updated>2014-11-13T09:55:51-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -36,6 +36,8 @@ values as raw bytes. Quite speedy too! Not nearly as fast as Cap&#8217;n Proto t
 sure if the other languages are able to avoid that allocation.</li>
 </ul>
 
+
+<hr />
 
 <p>JSON:</p>
 
@@ -89,6 +91,8 @@ sure if the other languages are able to avoid that allocation.</li>
 </table>
 
 
+<hr />
+
 <p>Cap&#8217;n Proto:</p>
 
 <table>
@@ -134,6 +138,8 @@ sure if the other languages are able to avoid that allocation.</li>
 </table>
 
 
+<hr />
+
 <p>Protocol Buffers:</p>
 
 <table>
@@ -171,6 +177,8 @@ sure if the other languages are able to avoid that allocation.</li>
 </tbody>
 </table>
 
+
+<hr />
 
 <p>Misc:</p>
 

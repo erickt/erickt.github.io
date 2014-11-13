@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Serialization | Tilting at Rabbit Holes]]></title>
   <link href="http://erickt.github.io/blog/categories/serialization/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2014-11-13T09:11:41-08:00</updated>
+  <updated>2014-11-13T09:55:51-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -12,6 +12,208 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Rewriting Rust Serialization, Part 2.2: More Benchmarks]]></title>
+    <link href="http://erickt.github.io/blog/2014/11/13/benchmarks-2/"/>
+    <updated>2014-11-13T09:07:36-08:00</updated>
+    <id>http://erickt.github.io/blog/2014/11/13/benchmarks-2</id>
+    <content type="html"><![CDATA[<p>Back to the benchmarks! I got some great comments on
+<a href="https://www.reddit.com/r/rust/comments/2lzc9n/rust_serialization_part_21_now_with_more/">reddit</a>,
+So I wanted to do another post to update my numbers. Here&rsquo;s what I changed:</p>
+
+<ul>
+<li>I wasn&rsquo;t consistent on whether or not the serialization benchmarks included
+Some tests are including the allocation of a buffer to write into. I&rsquo;ve
+  changed it so most are reusing one, which speeds everything up (especially
+capnproto-rust!). This does depend on
+<a href="https://github.com/rust-lang/rust/pull/18885">#18885</a> landing though.</li>
+<li>I&rsquo;ve added <a href="https://github.com/TyOverby/bincode">bincode</a>, which serializes
+values as raw bytes. Quite speedy too! Not nearly as fast as Cap&#8217;n Proto though.</li>
+<li>I&rsquo;ve changed <code>C++</code> and <code>Rust</code> JSON tests to serialize enums as uints.</li>
+<li>I added the time it takes to create the populate the structures. I&rsquo;m betting
+  the reason the Rust numbers are so high is that we&rsquo;re allocating strings. Not
+sure if the other languages are able to avoid that allocation.</li>
+</ul>
+
+
+<hr />
+
+<p>JSON:</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library         </th>
+<th> population (ns) </th>
+<th> serialization (MB/s) </th>
+<th> deserialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> Rust     </td>
+<td> serialize::json </td>
+<td> 1127            </td>
+<td> 117                  </td>
+<td> 26                     </td>
+</tr>
+<tr>
+<td> C++      </td>
+<td> rapidjson (dom) </td>
+<td> 546             </td>
+<td> 281                  </td>
+<td> 144                    </td>
+</tr>
+<tr>
+<td> C++      </td>
+<td> rapidjson (dom) </td>
+<td> 546             </td>
+<td> 281                  </td>
+<td> 181                    </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> encoding/json   </td>
+<td> 343             </td>
+<td> 63.99                </td>
+<td> 22.46                  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> ffjson          </td>
+<td> 343             </td>
+<td> 144.60               </td>
+<td> (not supported)        </td>
+</tr>
+</tbody>
+</table>
+
+
+<hr />
+
+<p>Cap&#8217;n Proto:</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library                   </th>
+<th> population (ns) </th>
+<th> serialization (MB/s) </th>
+<th> deserialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> Rust     </td>
+<td> capnproto-rust (unpacked) </td>
+<td> 325             </td>
+<td> 4977                 </td>
+<td> 2251                   </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> capnproto-rust (packed)   </td>
+<td> 325             </td>
+<td> 398                  </td>
+<td> 246                    </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> go-capnproto              </td>
+<td> 2368            </td>
+<td> 2226.71              </td>
+<td> 450                    </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> go-capnproto (zero copy)  </td>
+<td> 2368            </td>
+<td> 2226.71              </td>
+<td> 1393.3                 </td>
+</tr>
+</tbody>
+</table>
+
+
+<hr />
+
+<p>Protocol Buffers:</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library       </th>
+<th> population (ns) </th>
+<th> serialization (MB/s) </th>
+<th> deserialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> Rust     </td>
+<td> rust-protobuf </td>
+<td> 1041            </td>
+<td> 370                  </td>
+<td> 118                    </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> goprotobuf    </td>
+<td> 1133            </td>
+<td> 138.27               </td>
+<td> 91.18                  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> gogoprotobuf  </td>
+<td> 343             </td>
+<td> 472.69               </td>
+<td> 295.33                 </td>
+</tr>
+</tbody>
+</table>
+
+
+<hr />
+
+<p>Misc:</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library      </th>
+<th> population (ns) </th>
+<th> serialization (MB/s) </th>
+<th> deserialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> Rust     </td>
+<td> rust-msgpack </td>
+<td> 1143            </td>
+<td> 454                  </td>
+<td> 144                    </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> bincode      </td>
+<td> 1143            </td>
+<td> 1149                 </td>
+<td> 82                     </td>
+</tr>
+</tbody>
+</table>
+
+
+<p>Anyone want to add more C/Go/Rust/Java/etc benchmarks?</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Rewriting Rust Serialization, Part 2.1: Benchmarks]]></title>
