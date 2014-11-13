@@ -22,6 +22,8 @@ So I wanted to do another post to update my numbers. Here's what I changed:
 	the reason the Rust numbers are so high is that we're allocating strings. Not
   sure if the other languages are able to avoid that allocation.
 
+---
+
 JSON:
 
 | language | library         | population (ns) | serialization (MB/s) | deserialization (MB/s) |
@@ -32,6 +34,8 @@ JSON:
 | Go       | encoding/json   | 343             | 63.99                | 22.46                  |
 | Go       | ffjson          | 343             | 144.60               | (not supported)        |
 
+---
+
 Cap'n Proto:
 
 | language | library                   | population (ns) | serialization (MB/s) | deserialization (MB/s) |
@@ -41,6 +45,8 @@ Cap'n Proto:
 | Go       | go-capnproto              | 2368            | 2226.71              | 450                    |
 | Go       | go-capnproto (zero copy)  | 2368            | 2226.71              | 1393.3                 |
 
+---
+
 Protocol Buffers:
 
 | language | library       | population (ns) | serialization (MB/s) | deserialization (MB/s) |
@@ -48,6 +54,8 @@ Protocol Buffers:
 | Rust     | rust-protobuf | 1041            | 370                  | 118                    |
 | Go       | goprotobuf    | 1133            | 138.27               | 91.18                  |
 | Go       | gogoprotobuf  | 343             | 472.69               | 295.33                 |
+
+---
 
 Misc:
 
