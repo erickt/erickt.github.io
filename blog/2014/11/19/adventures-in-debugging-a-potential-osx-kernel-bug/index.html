@@ -1,24 +1,104 @@
-<?xml version="1.0" encoding="utf-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Tilting at Rabbit Holes]]></title>
-  <link href="http://erickt.github.io/atom.xml" rel="self"/>
-  <link href="http://erickt.github.io/"/>
-  <updated>2014-11-19T10:32:44-08:00</updated>
-  <id>http://erickt.github.io/</id>
-  <author>
-    <name><![CDATA[Erick Tryzelaar]]></name>
-    
-  </author>
-  <generator uri="http://octopress.org/">Octopress</generator>
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Chasing an EPROTOTYPE Through Rust, Sendto, and the OSX Kernel With C-Reduce - Tilting at Rabbit Holes</title>
+  <meta name="author" content="Erick Tryzelaar">
 
   
-  <entry>
-    <title type="html"><![CDATA[Chasing an EPROTOTYPE Through Rust, Sendto, and the OSX Kernel With C-Reduce]]></title>
-    <link href="http://erickt.github.io/blog/2014/11/19/adventures-in-debugging-a-potential-osx-kernel-bug/"/>
-    <updated>2014-11-19T07:35:04-08:00</updated>
-    <id>http://erickt.github.io/blog/2014/11/19/adventures-in-debugging-a-potential-osx-kernel-bug</id>
-    <content type="html"><![CDATA[<p>A slight diversion from my serialization series. Last week, strcat submitted
+  <meta name="description" content="A slight diversion from my serialization series. Last week, strcat submitted
+#18885 pull request, which adds
+support for using a Vec as a Writer. &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://erickt.github.io/blog/2014/11/19/adventures-in-debugging-a-potential-osx-kernel-bug">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="Tilting at Rabbit Holes" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+  <script type="text/javascript">
+    var _gaq = _gaq || [];
+    _gaq.push(['_setAccount', 'UA-32180054-1']);
+    _gaq.push(['_trackPageview']);
+
+    (function() {
+      var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+      ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+      var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+    })();
+  </script>
+
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">Tilting at Rabbit Holes</a></h1>
+  
+    <h2>A poorly updated blog about what I&#8217;m working on</h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="https://www.google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:erickt.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Chasing an EPROTOTYPE Through Rust, Sendto, and the OSX Kernel With C-Reduce</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-11-19T07:35:04-08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>19</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>7:35 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>A slight diversion from my serialization series. Last week, strcat submitted
 <a href="https://github.com/rust-lang/rust/pull/18885">#18885</a> pull request, which adds
 support for using a <code>Vec</code> as a <code>Writer</code>. Over the weekend I submitted
 <a href="https://github.com/rust-lang/rust/pull/18980">#18980</a>, which allows a <code>&amp;[u8]</code>
@@ -1174,1491 +1254,148 @@ ticket (number #19012087 for any Apple employees reading this). Hopefully if
 anyone runs into this mysterious <code>EPROTOTYPE</code> it&rsquo;ll be documented for them, or
 at least there&rsquo;s a chance they&rsquo;ll stumble over this blog post and save
 themselves a weekend diving through the OS.</p>
-]]></content>
-  </entry>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
   
-  <entry>
-    <title type="html"><![CDATA[Rewriting Rust Serialization, Part 2.2: More Benchmarks]]></title>
-    <link href="http://erickt.github.io/blog/2014/11/13/benchmarks-2/"/>
-    <updated>2014-11-13T09:07:36-08:00</updated>
-    <id>http://erickt.github.io/blog/2014/11/13/benchmarks-2</id>
-    <content type="html"><![CDATA[<p>Back to the benchmarks! I got some great comments on
-<a href="https://www.reddit.com/r/rust/comments/2lzc9n/rust_serialization_part_21_now_with_more/">reddit</a>,
-So I wanted to do another post to update my numbers. Here&rsquo;s what I changed:</p>
 
-<ul>
-<li>I wasn&rsquo;t consistent on whether or not the serialization benchmarks included
-Some tests are including the allocation of a buffer to write into. I&rsquo;ve
-  changed it so most are reusing one, which speeds everything up (especially
-capnproto-rust!). This does depend on
-<a href="https://github.com/rust-lang/rust/pull/18885">#18885</a> landing though.</li>
-<li>I&rsquo;ve added <a href="https://github.com/TyOverby/bincode">bincode</a>, which serializes
-values as raw bytes. Quite speedy too! Not nearly as fast as Cap&#8217;n Proto though.</li>
-<li>I&rsquo;ve changed <code>C++</code> and <code>Rust</code> JSON tests to serialize enums as uints.</li>
-<li>I added the time it takes to create the populate the structures. I&rsquo;m betting
-  the reason the Rust numbers are so high is that we&rsquo;re allocating strings. Not
-sure if the other languages are able to avoid that allocation.</li>
-</ul>
+<span class="byline author vcard">Posted by <span class="fn">Erick Tryzelaar</span></span>
+
+      
 
 
-<hr />
-
-<p>JSON:</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library         </th>
-<th> population (ns) </th>
-<th> serialization (MB/s) </th>
-<th> deserialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> Rust     </td>
-<td> serialize::json </td>
-<td> 1127            </td>
-<td> 117                  </td>
-<td> 26                     </td>
-</tr>
-<tr>
-<td> C++      </td>
-<td> rapidjson (dom) </td>
-<td> 546             </td>
-<td> 281                  </td>
-<td> 144                    </td>
-</tr>
-<tr>
-<td> C++      </td>
-<td> rapidjson (dom) </td>
-<td> 546             </td>
-<td> 281                  </td>
-<td> 181                    </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> encoding/json   </td>
-<td> 343             </td>
-<td> 63.99                </td>
-<td> 22.46                  </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> ffjson          </td>
-<td> 343             </td>
-<td> 144.60               </td>
-<td> (not supported)        </td>
-</tr>
-</tbody>
-</table>
 
 
-<hr />
+<time class='entry-date' datetime='2014-11-19T07:35:04-08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>19</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>7:35 am</span></time>
+      
 
-<p>Cap&#8217;n Proto:</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library                   </th>
-<th> population (ns) </th>
-<th> serialization (MB/s) </th>
-<th> deserialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust (unpacked) </td>
-<td> 325             </td>
-<td> 4977                 </td>
-<td> 2251                   </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust (packed)   </td>
-<td> 325             </td>
-<td> 398                  </td>
-<td> 246                    </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto              </td>
-<td> 2368            </td>
-<td> 2226.71              </td>
-<td> 450                    </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto (zero copy)  </td>
-<td> 2368            </td>
-<td> 2226.71              </td>
-<td> 1393.3                 </td>
-</tr>
-</tbody>
-</table>
-
-
-<hr />
-
-<p>Protocol Buffers:</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library       </th>
-<th> population (ns) </th>
-<th> serialization (MB/s) </th>
-<th> deserialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> Rust     </td>
-<td> rust-protobuf </td>
-<td> 1041            </td>
-<td> 370                  </td>
-<td> 118                    </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> goprotobuf    </td>
-<td> 1133            </td>
-<td> 138.27               </td>
-<td> 91.18                  </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> gogoprotobuf  </td>
-<td> 343             </td>
-<td> 472.69               </td>
-<td> 295.33                 </td>
-</tr>
-</tbody>
-</table>
-
-
-<hr />
-
-<p>Misc:</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library      </th>
-<th> population (ns) </th>
-<th> serialization (MB/s) </th>
-<th> deserialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> Rust     </td>
-<td> rust-msgpack </td>
-<td> 1143            </td>
-<td> 454                  </td>
-<td> 144                    </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> bincode      </td>
-<td> 1143            </td>
-<td> 1149                 </td>
-<td> 82                     </td>
-</tr>
-</tbody>
-</table>
-
-
-<p>Anyone want to add more C/Go/Rust/Java/etc benchmarks?</p>
-]]></content>
-  </entry>
+<span class="categories">
   
-  <entry>
-    <title type="html"><![CDATA[Rewriting Rust Serialization, Part 2.1: Benchmarks]]></title>
-    <link href="http://erickt.github.io/blog/2014/11/11/benchmarks/"/>
-    <updated>2014-11-11T08:11:34-08:00</updated>
-    <id>http://erickt.github.io/blog/2014/11/11/benchmarks</id>
-    <content type="html"><![CDATA[<p>After <a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2</a> I received
-a couple requests to add in a couple other rust serialization libraries. So one
-thing led to another, and now I&rsquo;ve got a benchmark suite I&rsquo;m calling
-<a href="https://github.com/erickt/rust-serialization-benchmarks">rust-serialization-benchmarks</a>.
-Really creative name, eh? This includes all the other benchmarks I referred to
-previously, as well as <a href="https://github.com/dwrensha/capnproto-rust">capnproto</a>,
-<a href="https://github.com/mneumann/rust-msgpack">msgpack</a>, and
-<a href="https://github.com/stepancheg/rust-protobuf">protobuf</a>.</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library             </th>
-<th> format                  </th>
-<th> serialization (MB/s) </th>
-<th> deserialization (MB/s)   </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> C++      </td>
-<td> rapidjson           </td>
-<td> JSON (dom)              </td>
-<td> 233                  </td>
-<td> 102                      </td>
-</tr>
-<tr>
-<td> C++      </td>
-<td> rapidjson           </td>
-<td> JSON (sax)              </td>
-<td> 233                  </td>
-<td> 124                      </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> encoding/json       </td>
-<td> JSON                    </td>
-<td> 54.93                </td>
-<td> 16.72                    </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> ffjson              </td>
-<td> JSON                    </td>
-<td> 126.40               </td>
-<td> (not supported)          </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> goprotobuf          </td>
-<td> Protocol Buffers        </td>
-<td> 138.27               </td>
-<td> 91.18                    </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> gogoprotobuf        </td>
-<td> Protocol Buffers        </td>
-<td> 472.69               </td>
-<td> 295.33                   </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto        </td>
-<td> Cap&#8217;n Proto             </td>
-<td> 2226.71              </td>
-<td> 450                      </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto        </td>
-<td> Cap&#8217;n Proto (zero copy) </td>
-<td> 2226.71              </td>
-<td> 1393.3                   </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> serialize::json     </td>
-<td> JSON                    </td>
-<td> 89                   </td>
-<td> 18                       </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> rust-msgpack        </td>
-<td> MessagePack             </td>
-<td> 160                  </td>
-<td> 52                       </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> rust-protobuf       </td>
-<td> Protocol Buffers        </td>
-<td> 177                  </td>
-<td> 70                       </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust      </td>
-<td> Cap&#8217;n Proto (unpacked)  </td>
-<td> 1729                 </td>
-<td> 1276                     </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust      </td>
-<td> Cap&#8217;n Proto (packed)    </td>
-<td> 398                  </td>
-<td> 246                      </td>
-</tr>
-</tbody>
-</table>
-
-
-<p>I upgraded to OS X Yosemite, so I think that brought these numbers down overall
-from the last post.</p>
-]]></content>
-  </entry>
+    <a class='category' href='/blog/categories/apple/'>apple</a>, <a class='category' href='/blog/categories/debugging/'>debugging</a>, <a class='category' href='/blog/categories/kernel/'>kernel</a>, <a class='category' href='/blog/categories/rust/'>rust</a>
   
-  <entry>
-    <title type="html"><![CDATA[Rewriting Rust Serialization, Part 2: Performance]]></title>
-    <link href="http://erickt.github.io/blog/2014/11/03/performance/"/>
-    <updated>2014-11-03T06:38:38-08:00</updated>
-    <id>http://erickt.github.io/blog/2014/11/03/performance</id>
-    <content type="html"><![CDATA[<p>As I said in the <a href="http://erickt.github.io/blog/2014/10/28/serialization/">last post</a>,
-Rust&rsquo;s <code>serialize</code> library, specifically <code>serialize::json</code> is pretty slow.
-Back when I started this project a number of months ago, I wanted to benchmark
-to see how we compared to some other languages. There are a bunch of JSON
-benchmarks, but the one I chose was Cloudflare&rsquo;s Go language.
-<a href="https://github.com/cloudflare/goser">Goser</a>, mainly because it was using a
-complex real world log structure, and they did the hard work of implementing
-benchmarks for <a href="http://golang.org/pkg/encoding/json">encoding/json</a>,
-<a href="http://code.google.com/p/goprotobuf/">goprotobuf</a>,
-<a href="http://code.google.com/p/gogoprotobuf/">gogoprotobuf</a>, and
-<a href="https://github.com/glycerine/go-capnproto">go-capnproto</a>. I also included the
-Go <a href="https://github.com/pquerna/ffjson">ffjson</a> and C++
-<a href="https://github.com/erickt/rapidjson/blob/master/log.cc">rapidjson</a>, which
-both claim to be the fastest JSON libraries for those languages. Here are the
-results I got:</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library             </th>
-<th> format           </th>
-<th> serialization (MB/s) </th>
-<th> deserialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> C++      </td>
-<td> rapidjson           </td>
-<td> JSON             </td>
-<td> 294                  </td>
-<td> 164 (DOM) / 192 (SAX)  </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> encoding/json       </td>
-<td> JSON             </td>
-<td> 71.47                </td>
-<td> 25.09                  </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> ffjson              </td>
-<td> JSON             </td>
-<td> 156.67               </td>
-<td> (not supported)        </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> goprotobuf          </td>
-<td> Protocol Buffers </td>
-<td> 148.78               </td>
-<td> 99.57                  </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> gogoprotobuf        </td>
-<td> Protocol Buffers </td>
-<td> 519.48               </td>
-<td> 319.40                 </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto        </td>
-<td> Cap&#8217;n Proto      </td>
-<td> 3419.54              </td>
-<td> 665.35                 </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> serialize::json     </td>
-<td> JSON             </td>
-<td> 40-ish               </td>
-<td> 10-ish                 </td>
-</tr>
-</tbody>
-</table>
+</span>
 
 
-<p>Notes:</p>
-
-<ul>
-<li><code>rapidjson</code> supports both DOM-style and SAX-style deserializing. DOM-style
-means deserializing into a generic object, then from there into the final
-object, SAX-style means a callback approach where a callback handler is
-called for each JSON token.</li>
-<li>Go&rsquo;s <code>encoding/json</code> uses reflection to serialize arbitrary values. <code>ffjson</code>
-uses code generation to get it&rsquo;s serialization sped, but it doesn&rsquo;t implement
-deserialization.</li>
-<li>both <code>goprotobuf</code> and <code>gogoprotobuf</code> use code generation, but gogoprotobuf
-uses Protocol Buffer&rsquo;s extension support to do cheaper serialization.</li>
-<li>Cap&#8217;n Proto doesn&rsquo;t really do serialization, but lays the serialized data out
-just like it is in memory so it has nearly zero serialization speed.</li>
-<li>The Rust numbers are from a couple months ago and I couldn&rsquo;t track down
-the exact numbers.</li>
-</ul>
-
-
-<p>So. Yikes. Not only are we no where near <code>rapidjson</code>, we were being soundly
-beaten by Go&rsquo;s reflection-based framework <code>encoding/json</code>.  Even worse, our
-compile time was at least 10 times theirs. So, not pretty at all.</p>
-
-<p>But that was a couple months ago. Between then and now, Patrick Walton, Luqman
-Aden, myself, and probably lots others found and fixed a number of bugs across
-<code>serialize::json</code>, <code>std::io</code>, generic function calls, and more. All this work
-got us to more than double our performance:</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library           </th>
-<th> format               </th>
-<th> serialization (MB/s)   </th>
-<th> deserialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> Rust     </td>
-<td> serialize::json   </td>
-<td> JSON                 </td>
-<td> 117                    </td>
-<td> 25                     </td>
-</tr>
-</tbody>
-</table>
-
-
-<p>We&rsquo;re (kind of) beating Go! At least the builtin reflection-based solution.
-Better, but not great. I think our challenge is those dang closures. While LLVM
-can optimize simple closures, it seems to have a lot of trouble with all these
-recursive closure calls. While having finished unboxed closures might finally
-let us break through this performance bottleneck, it&rsquo;s not guaranteed.</p>
-
-<p>All in all, this, and the representational problems from
-<a href="http://erickt.github.io/blog/2014/10/28/serialization/">post 1</a> make it pretty
-obvious we got some fundamental issues here and we need to use an alternative
-solution. Next post I&rsquo;ll start getting into the details of the design of
-<a href="https://github.com/erickt/rust-serde">serde</a>.</p>
-]]></content>
-  </entry>
+    </p>
+    
+      <div class="sharing">
   
-  <entry>
-    <title type="html"><![CDATA[Rewriting Rust Serialization, Part 1]]></title>
-    <link href="http://erickt.github.io/blog/2014/10/28/serialization/"/>
-    <updated>2014-10-28T08:52:18-07:00</updated>
-    <id>http://erickt.github.io/blog/2014/10/28/serialization</id>
-    <content type="html"><![CDATA[<p>Hello everybody! It&rsquo;s been, what, <em>two</em> years since I last blogged? Not my best
-performance, I&rsquo;m sorry to say. So for all of my 3 pageviews that are probably
-bots, I appologize for such a long delay on updating my blog. I got to say I&rsquo;ve
-been pretty inspired by the great <a href="http://jvns.ca/">Julia Evans</a> (who I hope we
-can someday get back to working on rust stuff). She&rsquo;s an epic blogger, and I
-hope I can get somewhere near that speed.</p>
-
-<p>Anyway, on to the post. My main on-again-off-again project this past year has
-been working Rust&rsquo;s generic <a href="http://doc.rust-lang.org/serialize/">serialize</a>
-library. If you haven&rsquo;t played with it yet, it&rsquo;s really nifty. It&rsquo;s a generic
-framework that allows a generic <code>Encoder</code> serialize a generic <code>Encodable</code>, and
-the inverse with <code>Decoder</code> and <code>Decodable</code>. This allows you to write just one
-<code>Encodable</code> impl that can transparently work with our
-<a href="http://doc.rust-lang.org/serialize/">json</a> library,
-<a href="https://github.com/mneumann/rust-msgpack">msgpack</a>,
-<a href="https://github.com/alexcrichton/toml-rs">toml</a>, and etc. It&rsquo;s simple to use
-too in most cases as you can use <code>#[deriving(Encodable, Decodable)]</code> to
-automatically create a implementation for your type. Here&rsquo;s an example:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">serialize</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'><span class="kn">use</span> <span class="n">serialize</span><span class="o">::</span><span class="n">json</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'><span class="cp">#[deriving(Encodable, Decodable, Show)]</span>
-</span><span class='line'><span class="k">struct</span> <span class="n">Employee</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">name</span><span class="o">:</span> <span class="n">String</span><span class="p">,</span>
-</span><span class='line'><span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="cp">#[deriving(Encodable, Decodable, Show)]</span>
-</span><span class='line'><span class="k">struct</span> <span class="n">Company</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">employees</span><span class="o">:</span> <span class="n">Vec</span><span class="o">&lt;</span><span class="n">Employee</span><span class="o">&gt;</span><span class="p">,</span>
-</span><span class='line'><span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="k">fn</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
-</span><span class='line'>    <span class="kd">let</span> <span class="n">company</span> <span class="o">=</span> <span class="n">Company</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">employees</span><span class="o">:</span> <span class="n">vec</span><span class="o">!</span><span class="p">[</span>
-</span><span class='line'>            <span class="n">Employee</span> <span class="p">{</span> <span class="n">name</span><span class="o">:</span> <span class="s">&quot;Dan&quot;</span><span class="p">.</span><span class="n">to_string</span><span class="p">()</span> <span class="p">},</span>
-</span><span class='line'>            <span class="n">Employee</span> <span class="p">{</span> <span class="n">name</span><span class="o">:</span> <span class="s">&quot;Erin&quot;</span><span class="p">.</span><span class="n">to_string</span><span class="p">()</span> <span class="p">},</span>
-</span><span class='line'>            <span class="n">Employee</span> <span class="p">{</span> <span class="n">name</span><span class="o">:</span> <span class="s">&quot;Jeff&quot;</span><span class="p">.</span><span class="n">to_string</span><span class="p">()</span> <span class="p">},</span>
-</span><span class='line'>            <span class="n">Employee</span> <span class="p">{</span> <span class="n">name</span><span class="o">:</span> <span class="s">&quot;Spencer&quot;</span><span class="p">.</span><span class="n">to_string</span><span class="p">()</span> <span class="p">},</span>
-</span><span class='line'>        <span class="p">],</span>
-</span><span class='line'>    <span class="p">};</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">let</span> <span class="n">s</span> <span class="o">=</span> <span class="n">json</span><span class="o">::</span><span class="n">encode</span><span class="p">(</span><span class="o">&amp;</span><span class="n">company</span><span class="p">);</span>
-</span><span class='line'>    <span class="kd">let</span> <span class="n">company</span><span class="o">:</span> <span class="n">Company</span> <span class="o">=</span> <span class="n">json</span><span class="o">::</span><span class="n">decode</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">as_slice</span><span class="p">()).</span><span class="n">unwrap</span><span class="p">();</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>There are some downsides to serialize though. Manually implementing can be a
-bit of a pain. Here&rsquo;s the example from before:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="n">S</span><span class="o">:</span> <span class="n">Encoder</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="n">Encodable</span><span class="o">&lt;</span><span class="n">S</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">Employee</span> <span class="p">{</span>
-</span><span class='line'>    <span class="k">fn</span> <span class="n">encode</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span> <span class="n">s</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">S</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
-</span><span class='line'>        <span class="k">match</span> <span class="o">*</span><span class="bp">self</span> <span class="p">{</span>
-</span><span class='line'>            <span class="n">Employee</span> <span class="p">{</span> <span class="n">name</span><span class="o">:</span> <span class="k">ref</span> <span class="n">name</span> <span class="p">}</span> <span class="o">=&gt;</span> <span class="p">{</span>
-</span><span class='line'>                <span class="n">s</span><span class="p">.</span><span class="n">emit_struct</span><span class="p">(</span><span class="s">&quot;Employee&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="k">u</span><span class="p">,</span> <span class="o">|</span><span class="n">s</span><span class="o">|</span> <span class="p">{</span>
-</span><span class='line'>                    <span class="n">s</span><span class="p">.</span><span class="n">emit_struct_field</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="k">u</span><span class="p">,</span> <span class="o">|</span><span class="n">s</span><span class="o">|</span> <span class="n">name</span><span class="p">.</span><span class="n">encode</span><span class="p">(</span><span class="n">s</span><span class="p">))</span>
-</span><span class='line'>                <span class="p">})</span>
-</span><span class='line'>            <span class="p">}</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'><span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="n">D</span><span class="o">:</span> <span class="n">Decoder</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="n">Decodable</span><span class="o">&lt;</span><span class="n">D</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">Employee</span> <span class="p">{</span>
-</span><span class='line'>    <span class="k">fn</span> <span class="n">decode</span><span class="p">(</span><span class="n">d</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">D</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Employee</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">d</span><span class="p">.</span><span class="n">read_struct</span><span class="p">(</span><span class="s">&quot;Employee&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="k">u</span><span class="p">,</span> <span class="o">|</span><span class="n">d</span><span class="o">|</span> <span class="p">{</span>
-</span><span class='line'>            <span class="nb">Ok</span><span class="p">(</span><span class="n">Employee</span> <span class="p">{</span>
-</span><span class='line'>                <span class="n">name</span><span class="o">:</span> <span class="p">{</span>
-</span><span class='line'>                    <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">d</span><span class="p">.</span><span class="n">read_struct_field</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="k">u</span><span class="p">,</span> <span class="o">|</span><span class="n">d</span><span class="o">|</span> <span class="p">{</span>
-</span><span class='line'>                        <span class="n">Decodable</span><span class="o">::</span><span class="n">decode</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
-</span><span class='line'>                    <span class="p">}))</span>
-</span><span class='line'>                <span class="p">}</span>
-</span><span class='line'>            <span class="p">})</span>
-</span><span class='line'>        <span class="p">})</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>As you can see, parsing compound structures requires these recursive closure
-calls in order to perform the handshake between the <code>Encoder</code> and the
-<code>Encodable</code>. A couple people have run into bugs in the past where they didn&rsquo;t
-implement this pattern, which results in some confusing bugs. Furthermore, LLVM
-isn&rsquo;t great at inlining these recursive calls, so <code>serialize</code> impls tend to not
-perform well.</p>
-
-<p>That&rsquo;s not the worst of it though. The real problem is that there are types
-that can implement <code>Encodable</code>, there&rsquo;s no way to write a <code>Decodable</code>
-implementation. They&rsquo;re pretty common too. For example, the
-<code>serialize::json::Json</code> type:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">enum</span> <span class="n">Json</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">I64</span><span class="p">(</span><span class="kt">i64</span><span class="p">),</span>
-</span><span class='line'>    <span class="n">U64</span><span class="p">(</span><span class="kt">u64</span><span class="p">),</span>
-</span><span class='line'>    <span class="n">F64</span><span class="p">(</span><span class="kt">f64</span><span class="p">),</span>
-</span><span class='line'>    <span class="n">String</span><span class="p">(</span><span class="n">string</span><span class="o">::</span><span class="n">String</span><span class="p">),</span>
-</span><span class='line'>    <span class="n">Boolean</span><span class="p">(</span><span class="kt">bool</span><span class="p">),</span>
-</span><span class='line'>    <span class="n">List</span><span class="p">(</span><span class="n">JsonList</span><span class="p">),</span>
-</span><span class='line'>    <span class="n">Object</span><span class="p">(</span><span class="n">JsonObject</span><span class="p">),</span>
-</span><span class='line'>    <span class="n">Null</span><span class="p">,</span>
-</span><span class='line'><span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="k">pub</span> <span class="k">type</span> <span class="n">JsonList</span> <span class="o">=</span> <span class="n">Vec</span><span class="o">&lt;</span><span class="n">Json</span><span class="o">&gt;</span><span class="p">;</span>
-</span><span class='line'><span class="k">pub</span> <span class="k">type</span> <span class="n">JsonObject</span> <span class="o">=</span> <span class="n">TreeMap</span><span class="o">&lt;</span><span class="n">string</span><span class="o">::</span><span class="n">String</span><span class="p">,</span> <span class="n">Json</span><span class="o">&gt;</span><span class="p">;</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>The <code>Json</code> value can represent any value that&rsquo;s in a JSON string. Implied in
-this is the notion that the <code>Decodable</code> has to look ahead to see what the next
-value is so it can decide which <code>Json</code> variant to construct. Unfortunately our
-current <code>Decoder</code> infrastructure doesn&rsquo;t support lookahead. The way the
-<code>Decoder</code>/<code>Decodable</code> handshake works is essentially:</p>
-
-<ul>
-<li><code>Decodable</code> asks for a struct named <code>"Employee"</code>.</li>
-<li><code>Decodable</code> asks for a field named <code>"name"</code>.</li>
-<li><code>Decodable</code> asks for a value of type <code>String</code>.</li>
-<li><code>Decodable</code> asks for a field named <code>"age"</code>.</li>
-<li><code>Decodable</code> asks for a value of type <code>uint</code>.</li>
-<li>&hellip;</li>
-</ul>
-
-
-<p>Any deviation from this pattern results in an error. There isn&rsquo;t a way for the
-<code>Decodable</code> to ask what is the type of the next value, so this is why we
-serialize generic enums by explicitly tagging the variant, as in:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">serialize</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'><span class="kn">use</span> <span class="n">serialize</span><span class="o">::</span><span class="n">json</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'><span class="cp">#[deriving(Encodable, Decodable, Show)]</span>
-</span><span class='line'><span class="k">enum</span> <span class="n">Animal</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">Dog</span><span class="p">(</span><span class="kt">uint</span><span class="p">),</span>
-</span><span class='line'>    <span class="n">Frog</span><span class="p">(</span><span class="n">String</span><span class="p">,</span> <span class="kt">uint</span><span class="p">),</span>
-</span><span class='line'><span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="k">fn</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
-</span><span class='line'>    <span class="kd">let</span> <span class="n">animal</span> <span class="o">=</span> <span class="n">Frog</span><span class="p">(</span><span class="s">&quot;Frank&quot;</span><span class="p">.</span><span class="n">to_string</span><span class="p">(),</span> <span class="mi">349</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">let</span> <span class="n">s</span> <span class="o">=</span> <span class="n">json</span><span class="o">::</span><span class="n">encode</span><span class="p">(</span><span class="o">&amp;</span><span class="n">animal</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="nb">println</span><span class="o">!</span><span class="p">(</span><span class="s">&quot;{}&quot;</span><span class="p">,</span> <span class="n">s</span><span class="p">);</span>
-</span><span class='line'>    <span class="c1">// prints {&quot;variant&quot;:&quot;Frog&quot;,&quot;fields&quot;:[&quot;Frank&quot;,349]}</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>That&rsquo;s probably good enough for now. In my next post I&rsquo;ll go into in my
-approach to fix this in <a href="https://github.com/erickt/rust-serde">serde</a>.</p>
-]]></content>
-  </entry>
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://erickt.github.io/blog/2014/11/19/adventures-in-debugging-a-potential-osx-kernel-bug/" data-via="" data-counturl="http://erickt.github.io/blog/2014/11/19/adventures-in-debugging-a-potential-osx-kernel-bug/" >Tweet</a>
   
-  <entry>
-    <title type="html"><![CDATA[Rust for Ragel]]></title>
-    <link href="http://erickt.github.io/blog/2012/07/29/rust-for-ragel/"/>
-    <updated>2012-07-29T10:20:00-07:00</updated>
-    <id>http://erickt.github.io/blog/2012/07/29/rust-for-ragel</id>
-    <content type="html"><![CDATA[<p>I&rsquo;ve written a bunch of simple parsers for Rust, and it&rsquo;s starting to get a
-little obnoxious. So I added a Rust backend to the
-<a href="http://www.complang.org/ragel/">Ragel State Machine Compiler</a>.
-You can find my fork <a href="https://github.com/erickt/ragel">here</a>. I&rsquo;m waiting for
-Rust to stablize before I try to push it upstream.</p>
-
-<p>Ragel is a rather neat way of writing simple parsers. In some ways it&rsquo;s pretty
-similar to Lex, but Ragel also allows you execute arbitrary code at any point
-in the state machine. Furthermore, this arbitrary code can manipulate the state
-machine itself, so it can be used in many places you&rsquo;d traditionally need a
-full parser, such as properly handling parentheses.</p>
-
-<p>Here&rsquo;s an example of a <code>atoi</code> function:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>%%{
-</span><span class='line'>machine atoi;
-</span><span class='line'>
-</span><span class='line'>action see_neg   { neg = true; }
-</span><span class='line'>action add_digit { res = res * 10 + (fc as int - '0' as int); }
-</span><span class='line'>
-</span><span class='line'>main :=
-</span><span class='line'>    ( '-' @see_neg | '+' )? ( digit @add_digit )+
-</span><span class='line'>    '\n'?
-</span><span class='line'>;
-</span><span class='line'>
-</span><span class='line'>write data;
-</span><span class='line'>}%%
-</span><span class='line'>
-</span><span class='line'>fn atoi(data: ~str) -&gt; option&lt;int&gt; {
-</span><span class='line'>    let mut neg = false;
-</span><span class='line'>    let mut res = 0;
-</span><span class='line'>
-</span><span class='line'>    // Ragel assumes that it will be iterating over a value called data, but we
-</span><span class='line'>    // need to tell ragel where to start (p) and end (pe) parsing.
-</span><span class='line'>    let mut p = 0;
-</span><span class='line'>    let mut pe = data.len();
-</span><span class='line'>
-</span><span class='line'>    // This is the current state in the state machine.
-</span><span class='line'>    let mut cs: int;
-</span><span class='line'>
-</span><span class='line'>    write init;
-</span><span class='line'>    write exec;
-</span><span class='line'>
-</span><span class='line'>    if neg { res = -1 * res; }
-</span><span class='line'>
-</span><span class='line'>    // If we stopped before we hit one of the exit states, then there must have
-</span><span class='line'>    // been an error of some sort.
-</span><span class='line'>    if cs &lt; atoi_first_final {
-</span><span class='line'>        none
-</span><span class='line'>    } else {
-</span><span class='line'>        some(res)
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>While this is probably a bit more verbose than writing <code>atoi</code> by hand, it does
-make the grammar pretty explicit, which can help keep it accurate.</p>
-
-<p>Unfortunately there are some pretty severe performance issues at the moment.
-Ragel supports two state machine styles, table-driven and goto-driven. My
-backend uses tables, but since Rust doesn&rsquo;t yet support global constant
-vectors, I need to malloc the state machine table on every function call. This
-results in the <a href="https://github.com/erickt/ragel/blob/rust/examples/rust/url.rl">ragel-based url
-parser</a> being about
-10 times slower than the equivalent table-based parser in OCaml. You can see
-the generated code <a href="https://gist.github.com/3200980">here</a>.</p>
-
-<p>The <code>goto</code> route could be promising to explore. We could simulate it using
-mutually recursive function calls. OCaml does this. But again, since Rust
-doesn&rsquo;t support tailcalls (and may
-<a href="https://github.com/mozilla/rust/issues/217">ever</a>), we could run into a stack
-explosion. It may work well for small grammars though, and maybe LLVM could
-optimize calls into tailcalls.</p>
-
-<p>Unless I&rsquo;m doing something glaringly wrong, it seems likely that we are going
-to need some compiler help before these performance issues get solved.</p>
-]]></content>
-  </entry>
   
-  <entry>
-    <title type="html"><![CDATA[Meal, Ready-to-Eat: A Web Framework for Rust]]></title>
-    <link href="http://erickt.github.io/blog/2012/07/05/meal-ready-to-eat-a-web-framework-for-rust/"/>
-    <updated>2012-07-05T08:55:00-07:00</updated>
-    <id>http://erickt.github.io/blog/2012/07/05/meal-ready-to-eat-a-web-framework-for-rust</id>
-    <content type="html"><![CDATA[<p>I&rsquo;ve been putting this off for far too long. For the last three months I&rsquo;ve
-been working on <a href="https://github.com/erickt/mre">Meal, Ready-to-Eat</a>, a web
-framework for the <a href="http://rust-lang.org">Rust programming language</a>. I call it
-MRE. Rust didn&rsquo;t have a TCP stack when I started the project, so instead I
-built MRE on top of <a href="http://mongrel2.org">Mongrel2</a>. It talks
-<a href="http://zeromq.org">Zeromq</a>, so I could get something up pretty quickly. It&rsquo;s
-inspired by <a href="http://www.sinatrarb.com/">Sinatra</a> and
-<a href="http://expressjs.com/">Express.js</a>.  So take all this code with a grain of
-salt. The design is very much in flux and there are some pretty rough edges.
-Better to release early and get feedback though, right?</p>
-
-<p>One word of warning though. Rust&rsquo;s syntax and semantics are still in flux, so
-it&rsquo;s quite possible this blog post will be out of date by the time you read it.</p>
-
-<h2>Hello World</h2>
-
-<p>Let&rsquo;s start with the classic Hello World app. You can find the full example
-<a href="https://github.com/erickt/mre/blob/master/examples/helloworld/helloworld.rs">here</a>.
-This example is a little more verbose than frameworks like Sinatra and Express,
-and not just because Rust is statically typed. Those other frameworks take
-advantage of global variables and static initializers, but Rust doesn&rsquo;t, so we
-have to make due with some boilerplate code.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>let mre = mre::mre(
-</span><span class='line'>      // Create a zeromq context that MRE will use to talk to Mongrel2.
-</span><span class='line'>      alt zmq::init(1) {
-</span><span class='line'>          ok(ctx) { ctx }
-</span><span class='line'>          err(e) { fail e.to_str() }
-</span><span class='line'>      },
-</span><span class='line'>
-</span><span class='line'>      // A UUID for this Mongrel2 backend.
-</span><span class='line'>      some("E4B7CE14-E7F7-43EE-A3E6-DB7B0A0C106F"),
-</span><span class='line'>
-</span><span class='line'>      // The addresses to receive requests from.
-</span><span class='line'>      ~["tcp://127.0.0.1:9996"],
-</span><span class='line'>
-</span><span class='line'>      // The addresses to send responses to.
-</span><span class='line'>      ~["tcp://127.0.0.1:9997"],
-</span><span class='line'>
-</span><span class='line'>      // Create our middleware, which preproceses requests and
-</span><span class='line'>      // responses. For now we'll just use the logger.
-</span><span class='line'>      ~[mre::middleware::logger(io::stdout())],
-</span><span class='line'>
-</span><span class='line'>      // A function to create per-request data. This can be used by
-</span><span class='line'>      // middleware like middleware::session to automatically look
-</span><span class='line'>      // up the current user and session data in the database. We don't
-</span><span class='line'>      // need it for this example, so just return a unit value.
-</span><span class='line'>      || ()
-</span><span class='line'>);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Eventually I would like to pull the Mongrel2 settings out into a separate
-config file, so it should get a little more slim in the future. Once we have an
-<code>mre</code> value, we can define some routes.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>do mre.get("^/$") |_req, rep, _m| {
-</span><span class='line'>      rep.reply_html(200u,
-</span><span class='line'>              "&lt;html&gt;\n" +
-</span><span class='line'>              "&lt;body&gt;\n" +
-</span><span class='line'>              "&lt;h1&gt;Hello world!&lt;/h1&gt;\n" + 
-</span><span class='line'>              "&lt;/body&gt;\n" +
-</span><span class='line'>              "&lt;/html&gt;")
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Routes are defined much like Sinatra. You&rsquo;ll find helpers for all the HTTP/1.1
-methods. These method handlers take two arguments. The first is a PCRE regular
-expression, which may have capture clauses, the second a response handler
-closure. Whenever a request comes for a path that accesses this matching
-handler, the closure will be called with a <code>mre::request</code>, <code>mre::response</code>, and
-the regex match object. <code>mre::request</code> values, obviously, contain all the data
-relevant for a given request. Most important the headers and the body.
-<code>mre::response</code> values handle sending responses back to the client.</p>
-
-<p>Finally, we start the MRE event loop, and we&rsquo;re off.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>mre.run();</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>Models</h2>
-
-<p>MRE also comes with a basic database support, built on top of
-<a href="http://elasticsearch.org">Elasticsearch</a>. Sure it&rsquo;s technically a a fulltext
-search engine, but it also works quite well as a JSON object store. Plus,
-there&rsquo;s a <a href="https://github.com/tlrx/transport-zeromq">Zeromq plugin</a>, so it was
-pretty easy to plug it into MRE.  The plugin can be a bit of a pain to set up,
-however, so I wrote up some directions for that
-<a href="https://github.com/erickt/rust-elasticsearch">here</a>.</p>
-
-<p>Let&rsquo;s rewrite our Hello World app to be a bit more interactive. Rather than
-just saying Hello World, let&rsquo;s greet anyone who asks (Source is
-<a href="https://github.com/erickt/mre/blob/master/examples/helloeveryone">here</a>).
-Before we begin with the MRE code, we need to create our Elasticsearch index:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>curl -XPOST "http://localhost:9200/helloeveryone" -d '{
-</span><span class='line'>  "settings": {
-</span><span class='line'>    "index.number_of_shards": 1,
-</span><span class='line'>    "index.number_of_replicas": 0
-</span><span class='line'>  },
-</span><span class='line'>  "mappings": {
-</span><span class='line'>    "person": {
-</span><span class='line'>      "properties": {
-</span><span class='line'>        "timestamp": {"type": "date", "index": "not_analyzed"},
-</span><span class='line'>        "name": {"type": "string", "index": "not_analyzed"}
-</span><span class='line'>      }
-</span><span class='line'>    }
-</span><span class='line'>  }
-</span><span class='line'>}'</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Next, lets make a model of all the people we&rsquo;ll greet. At it&rsquo;s heart, a
-model is just a JSON object with some helper functions. Unfortunately Rust
-still has some ways to go before we can write really clean models. There is no
-support for inheritance or mixin classes, so we need to duplicate some code in
-all the models. Also, our constructors are not that featureful. We don&rsquo;t
-support mulitple constructors, nor is there a way to make a constructor
-private. Fortunately we can hack our way to the API we want.</p>
-
-<p>So enough preamble, lets see this in action. Below is our <code>person</code> model:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>class _person {
-</span><span class='line'>    let model: model;
-</span><span class='line'>
-</span><span class='line'>    new(model: model) {
-</span><span class='line'>        self.model = model;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn id() -&gt; @str {
-</span><span class='line'>        self.model._id
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn timestamp() -&gt; @str {
-</span><span class='line'>        self.model.get_str("timestamp")
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn set_timestamp(timestamp: @str) -&gt; bool {
-</span><span class='line'>        self.model.set_str("timestamp", timestamp)
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn name() -&gt; @str {
-</span><span class='line'>        self.model.get_str("name")
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn set_name(name: @str) -&gt; bool {
-</span><span class='line'>        self.model.set_str("name", name)
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn create() -&gt; result&lt;(), error&gt; {
-</span><span class='line'>        self.model.create()
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn save() -&gt; result&lt;(), error&gt; {
-</span><span class='line'>        self.model.save()
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn delete() {
-</span><span class='line'>        self.model.delete()
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>type person = _person;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>In order to work around not having private constructors, we create a class
-called <code>_person</code>, which is then aliased to <code>person</code>. If we don&rsquo;t export
-<code>_person</code>, then our constructor is effectively hidden.</p>
-
-<p>Next, here&rsquo;s how to create and find the <code>person</code> models:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>// Create a new person model.
-</span><span class='line'>fn person(es: client, name: @str) -&gt; person {
-</span><span class='line'>    // Create a person. We'll store the model in the ES index named
-</span><span class='line'>    // "helloeveryone", under the type "person". We'd like ES to make the index
-</span><span class='line'>    // for us, so we leave the id blank.
-</span><span class='line'>    let person = _person(model(es, @"helloeveryone", @"person", @""));
-</span><span class='line'>
-</span><span class='line'>    person.set_name(name);
-</span><span class='line'>    person.set_timestamp(@time::now().rfc3339());
-</span><span class='line'>
-</span><span class='line'>    person
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>// Return the last 50 people we have said hello to.
-</span><span class='line'>fn last_50(es: client) -&gt; [person] {
-</span><span class='line'>    // This query can be a little complicated for those who have never used
-</span><span class='line'>    // elasticsearch. All it says is that we want to fetch 50 documents on the
-</span><span class='line'>    // index "helloeveryone" and the type "person", sorted by time.
-</span><span class='line'>    do model::search(es) |bld| {
-</span><span class='line'>        bld
-</span><span class='line'>            .set_indices(~["helloeveryone"])
-</span><span class='line'>            .set_types(~["person"])
-</span><span class='line'>            .set_source(*json_dict_builder()
-</span><span class='line'>                .insert("size", 50.0)
-</span><span class='line'>                .insert_list("sort", |bld|
-</span><span class='line'>                    bld.push_dict(|bld|
-</span><span class='line'>                        bld.insert("timestamp", "desc");
-</span><span class='line'>                    });
-</span><span class='line'>                })
-</span><span class='line'>            );
-</span><span class='line'>    }.map(|model|
-</span><span class='line'>        // Construct a person model from the raw model data.
-</span><span class='line'>        _person(model)
-</span><span class='line'>    )
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Here, since <code>person</code> is just a type alias, we can also create a function called
-<code>person</code>. The underlying <code>_person</code> constructor then can be shared with
-multiple functions, which lets us simulate having multiple constructors. So,
-the users of the model have a clean api, which is exactly what we want.</p>
-
-<p>We&rsquo;re almost done, so lets finish up and tie everything together in our <code>main</code>:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>fn main() {
-</span><span class='line'>    // Create a zeromq context that MRE will use to talk to Mongrel2 and
-</span><span class='line'>    // Elasticsearch.
-</span><span class='line'>    let zmq = alt zmq::init(1) {
-</span><span class='line'>        ok(ctx) { ctx }
-</span><span class='line'>        err(e) { fail e.to_str() }
-</span><span class='line'>    };
-</span><span class='line'>
-</span><span class='line'>    let mre = mre::mre(zmq, ...);
-</span><span class='line'>
-</span><span class='line'>    // Connect to Elasticsearch, which we'll use as our database.
-</span><span class='line'>    let es = elasticsearch::connect_with_zmq(zmq, "tcp://localhost:9700");
-</span><span class='line'>
-</span><span class='line'>    // Show who we'll say hello to.
-</span><span class='line'>    do mre.get("^/$") |_req, rep, _m| {
-</span><span class='line'>        // Fetch the people we've greeted.
-</span><span class='line'>        let people = person::last_50(es);
-</span><span class='line'>
-</span><span class='line'>        // We want to render out our responses using mustache, so we need
-</span><span class='line'>        // to convert our model over to something mustache can handle.
-</span><span class='line'>        let template = mustache::render_file("index", hash_from_strs(~[
-</span><span class='line'>            ("names", do people.map |person| {
-</span><span class='line'>                hash_from_strs(~[
-</span><span class='line'>                    ("name", person.name())
-</span><span class='line'>                ])
-</span><span class='line'>            }.to_mustache())
-</span><span class='line'>        ]));
-</span><span class='line'>               
-</span><span class='line'>        rep.reply_html(200u, template)
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    // Add a new person to greet.
-</span><span class='line'>    do mre.post("^/$") |req, rep, _m| {
-</span><span class='line'>        // Parse the form data.
-</span><span class='line'>        let form = uri::decode_form_urlencoded(*req.body());
-</span><span class='line'>
-</span><span class='line'>        alt form.find("name") {
-</span><span class='line'>          none {
-</span><span class='line'>            rep.reply_http(400u, "missing name");
-</span><span class='line'>          }
-</span><span class='line'>          some(names) {
-</span><span class='line'>            // Create and save our person. If successful, redirect back to
-</span><span class='line'>            // the front page.
-</span><span class='line'>            let person = person::person(es, (*names)[0u]);
-</span><span class='line'>
-</span><span class='line'>            alt person.create() {
-</span><span class='line'>              ok(()) { rep.reply_redirect("/") }
-</span><span class='line'>              err(e) {
-</span><span class='line'>                // Uh oh, something bad happened. Let's just display the
-</span><span class='line'>                // error back to the user for now.
-</span><span class='line'>                rep.reply_http(500u, e.msg)
-</span><span class='line'>              }
-</span><span class='line'>            }
-</span><span class='line'>          }
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    // Finally, start the MRE event loop.
-</span><span class='line'>    mre.run();
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>Middleware</h2>
-
-<p>As you probably saw in the <code>mre::mre</code> constructor, MRE has some basic
-support for middleware. Creating middleware is pretty easy. It&rsquo;s just a
-function that matches this interface (That type variable matches the return
-type for the closure passed in to <code>mre::mre</code>):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>type middleware&lt;T&gt; = fn@(@request&lt;T&gt;, @response) -&gt; bool;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Middleware gets called on each request in order, and is able to
-read the request and it&rsquo;s headers, and modify the response hooks. Here&rsquo;s
-<code>mre::middleware::logger</code>, to show how it works:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>fn logger&lt;T: copy&gt;(logger: io::writer) -&gt; middleware&lt;T&gt; {
-</span><span class='line'>    |req: @request&lt;T&gt;, rep: @response| {
-</span><span class='line'>        let old_end = rep.end;
-</span><span class='line'>        rep.end = || {
-</span><span class='line'>            let address = alt req.find_header("x-forwarded-for") {
-</span><span class='line'>              none { @"-" }
-</span><span class='line'>              some(address) { address }
-</span><span class='line'>            };
-</span><span class='line'>
-</span><span class='line'>            let method = alt req.find_header("METHOD") {
-</span><span class='line'>              none { @"-" }
-</span><span class='line'>              some(method) { method }
-</span><span class='line'>            };
-</span><span class='line'>
-</span><span class='line'>            let len = alt rep.find_header("Content-Length") {
-</span><span class='line'>              none { @"-" }
-</span><span class='line'>              some(len) { len }
-</span><span class='line'>            };
-</span><span class='line'>
-</span><span class='line'>            logger.write_line(#fmt("%s - %s [%s] \"%s %s\" %u %s",
-</span><span class='line'>                *address,
-</span><span class='line'>                "-",
-</span><span class='line'>                time::now().strftime("%d/%m/%Y:%H:%M:%S %z"),
-</span><span class='line'>                *method,
-</span><span class='line'>                *req.path(),
-</span><span class='line'>                rep.code,
-</span><span class='line'>                *len));
-</span><span class='line'>
-</span><span class='line'>            old_end();
-</span><span class='line'>        };
-</span><span class='line'>
-</span><span class='line'>        true
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>MRE also includes a <code>mre::middleware::session</code> middleware, which implements a
-traditional cookie-based session authentication scheme. This one is
-unfortunately a little more complicated to use. Starting off, you need to
-create a new datatype to store the session data and give a constructor to <code>mre</code>
-on how to make this per-request data:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>type data = @{
-</span><span class='line'>    mut session: option&lt;mre::session::session&gt;,
-</span><span class='line'>    mut user: option&lt;mre::user::user&gt;,
-</span><span class='line'>};
-</span><span class='line'>
-</span><span class='line'>let middleware = ~[
-</span><span class='line'>      mre::middleware::logger(io::stdout()),
-</span><span class='line'>      mre::middleware::session(es,
-</span><span class='line'>              @"blog",
-</span><span class='line'>              @"blog",
-</span><span class='line'>              @"session",
-</span><span class='line'>              |req: @request&lt;data&gt;, session, user| {
-</span><span class='line'>                      req.data.session = some(session);
-</span><span class='line'>                      req.data.user = some(user);
-</span><span class='line'>              }
-</span><span class='line'>      )
-</span><span class='line'>];
-</span><span class='line'>
-</span><span class='line'>let mre = mre::mre(zmq,
-</span><span class='line'>      some("F0D32575-2ABB-4957-BC8B-12DAC8AFF13A"),
-</span><span class='line'>      ~["tcp://127.0.0.1:9998"],
-</span><span class='line'>      ~["tcp://127.0.0.1:9999"],
-</span><span class='line'>      middleware,
-</span><span class='line'>      || @{ mut session: none, mut user: none }
-</span><span class='line'>);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Then you access this data through the <code>request.data</code> member:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>do app.post("^/$") |req, rep, _m| {
-</span><span class='line'>    let id = alt req.user {
-</span><span class='line'>      none { @"world" }
-</span><span class='line'>      some(user) { user.id() }
-</span><span class='line'>    };
-</span><span class='line'>
-</span><span class='line'>      rep.reply_html(200u,
-</span><span class='line'>              "&lt;html&gt;\n" +
-</span><span class='line'>        "&lt;body&gt;\n" +
-</span><span class='line'>        "&lt;h1&gt;Hello " + *id + "!&lt;/h1&gt;\n" + 
-</span><span class='line'>        "&lt;/body&gt;\n" +
-</span><span class='line'>        "&lt;/html&gt;")
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>See the <a href="https://github.com/erickt/mre/tree/master/examples/blog">blog</a> for a
-complete example.</p>
-]]></content>
-  </entry>
   
-</feed>
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2014/11/13/benchmarks-2/" title="Previous Post: Rewriting Rust Serialization, Part 2.2: More Benchmarks">&laquo; Rewriting Rust Serialization, Part 2.2: More Benchmarks</a>
+      
+      
+    </p>
+  </footer>
+</article>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/11/19/adventures-in-debugging-a-potential-osx-kernel-bug/">Chasing an EPROTOTYPE Through Rust, Sendto, and the OSX Kernel With C-Reduce</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/11/13/benchmarks-2/">Rewriting Rust Serialization, Part 2.2: More Benchmarks</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/11/11/benchmarks/">Rewriting Rust Serialization, Part 2.1: Benchmarks</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/11/03/performance/">Rewriting Rust Serialization, Part 2: Performance</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/10/28/serialization/">Rewriting Rust Serialization, Part 1</a>
+      </li>
+    
+  </ul>
+</section>
+
+<section>
+  <h1>GitHub Repos</h1>
+  <ul id="gh_repos">
+    <li class="loading">Status updating&#8230;</li>
+  </ul>
+  
+  <a href="https://github.com/erickt">@erickt</a> on GitHub
+  
+  <script type="text/javascript">
+    $(document).ready(function(){
+        if (!window.jXHR){
+            var jxhr = document.createElement('script');
+            jxhr.type = 'text/javascript';
+            jxhr.src = '/javascripts/libs/jXHR.js';
+            var s = document.getElementsByTagName('script')[0];
+            s.parentNode.insertBefore(jxhr, s);
+        }
+
+        github.showRepos({
+            user: 'erickt',
+            count: 0,
+            skip_forks: true,
+            target: '#gh_repos'
+        });
+    });
+  </script>
+  <script src="/javascripts/github.js" type="text/javascript"> </script>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 - Erick Tryzelaar -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>
