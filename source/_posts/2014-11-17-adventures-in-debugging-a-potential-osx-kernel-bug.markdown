@@ -347,7 +347,7 @@ This snippet reproduces the same `EPROTOTYPE` that we started with at the top
 of the post. Pretty cool that we got here without much effort?
 
 Now At this point you might say to yourself that couldn't I have extracted this
-out myself?  And yead, you would be right. This is a pretty much a c-in-rust
+out myself?  And yeah, you would be right. This is a pretty much a c-in-rust
 implementation of this bug. But what's great about using C-Reduce here is that
 I only had to make some very rough guesses about what files were and were not
 important to include in my `test.rs`. Eventually when we get some rust plugins
