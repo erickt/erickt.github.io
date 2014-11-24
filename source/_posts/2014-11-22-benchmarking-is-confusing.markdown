@@ -6,6 +6,13 @@ comments: true
 categories: [benchmarking, rust]
 ---
 
+Edit: you can find all the code in this post
+[here](https://github.com/erickt/rust-serialization-benchmarks/blob/master/rust/src/writer.rs),
+and I filed [19281](https://github.com/rust-lang/rust/issues/19281) for the
+regression I mentioned at the end of the post.
+
+---
+
 Low level benchmarking is confusing and non-intuitive.
 
 The end.
