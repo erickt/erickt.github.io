@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Apple | Tilting at Rabbit Holes]]></title>
   <link href="http://erickt.github.io/blog/categories/apple/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2014-11-19T10:32:44-08:00</updated>
+  <updated>2014-11-23T21:33:54-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -351,7 +351,7 @@ fn main() {
 of the post. Pretty cool that we got here without much effort?</p>
 
 <p>Now At this point you might say to yourself that couldn&rsquo;t I have extracted this
-out myself?  And yead, you would be right. This is a pretty much a c-in-rust
+out myself?  And yeah, you would be right. This is a pretty much a c-in-rust
 implementation of this bug. But what&rsquo;s great about using C-Reduce here is that
 I only had to make some very rough guesses about what files were and were not
 important to include in my <code>test.rs</code>. Eventually when we get some rust plugins

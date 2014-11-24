@@ -4,7 +4,7 @@
   <title><![CDATA[Tilting at Rabbit Holes]]></title>
   <link href="http://erickt.github.io/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2014-11-19T10:32:44-08:00</updated>
+  <updated>2014-11-23T21:33:54-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -12,6 +12,793 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Benchmarking Is Confusing]]></title>
+    <link href="http://erickt.github.io/blog/2014/11/22/benchmarking-is-confusing/"/>
+    <updated>2014-11-22T12:10:28-08:00</updated>
+    <id>http://erickt.github.io/blog/2014/11/22/benchmarking-is-confusing</id>
+    <content type="html"><![CDATA[<p>Low level benchmarking is confusing and non-intuitive.</p>
+
+<p>The end.</p>
+
+<hr />
+
+<p>Or not. Whatever. So I&rsquo;m trying to get my
+implement-<code>Reader</code>-and-<code>Writer</code>-for-<code>&amp;[u8]</code> type PR
+<a href="https://github.com/rust-lang/rust/pull/18980">#18980</a> landed. But
+<a href="https://github.com/rust-lang/rust/pull/18980#issuecomment-63925495">Steven Fackler</a>
+obnixously and correctly pointed out that this won&rsquo;t play that nicely with the
+new <code>Reader</code> and <code>Writer</code> implementation for <code>Vec&lt;u8&gt;</code>. Grumble grumble. And then
+<a href="https://github.com/rust-lang/rust/pull/18980#issuecomment-63927659">Alex Crichton</a>
+had the gall to mention that a <code>Writer</code> for <code>mut &amp;[u8]</code> also probably won&rsquo;t be
+that common either. Sure, he&rsquo;s write and all, but but I got it working without
+needing an index! That means that the <code>&amp;mut [u8]</code> <code>Writer</code> only needs 2
+pointers instead of <code>BufWriter</code>&rsquo;s three, so it just has to be faster! Well,
+doesn&rsquo;t it?</p>
+
+<p>Stupid benchmarks.</p>
+
+<p>I got to say it&rsquo;s pretty addicting writing micro-benchmarks. It&rsquo;s a lot of fun
+seeing how sensitive low-level code can be to just the smallest of tweaks. It&rsquo;s
+also really annoying when you write something you think is pretty neat, then
+you find it&rsquo;s chock-full of false dependencies between cache lines, or other
+mean things CPUs like to impose on poor programmers.</p>
+
+<p>Anyway, to start lets look at what should be the fastest way to write to a
+buffer. Completely unsafely with no checks.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">unsafe</span> <span class="k">fn</span> <span class="n">do_copy_nonoverlapping_memory</span><span class="p">(</span>
+</span><span class='line'>  <span class="k">mut</span> <span class="n">dst</span><span class="o">:</span> <span class="o">*</span><span class="k">mut</span> <span class="kt">u8</span><span class="p">,</span>
+</span><span class='line'>  <span class="n">src</span><span class="o">:</span> <span class="o">*</span><span class="kr">const</span> <span class="kt">u8</span><span class="p">,</span>
+</span><span class='line'>  <span class="n">len</span><span class="o">:</span> <span class="kt">uint</span><span class="p">,</span>
+</span><span class='line'>  <span class="n">batches</span><span class="o">:</span> <span class="kt">uint</span>
+</span><span class='line'><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">for</span> <span class="n">_</span> <span class="k">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">batches</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">ptr</span><span class="o">::</span><span class="n">copy_nonoverlapping_memory</span><span class="p">(</span><span class="n">dst</span><span class="p">,</span> <span class="n">src</span><span class="p">,</span> <span class="n">len</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">dst</span> <span class="o">=</span> <span class="n">dst</span><span class="p">.</span><span class="n">offset</span><span class="p">(</span><span class="n">len</span> <span class="k">as</span> <span class="kt">int</span><span class="p">);</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#[test]</span>
+</span><span class='line'><span class="k">fn</span> <span class="n">test_copy_nonoverlapping_memory</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">dst</span> <span class="o">=</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="p">[</span><span class="mi">0_</span><span class="k">u8</span><span class="p">,</span> <span class="p">..</span> <span class="n">BATCHES</span> <span class="o">*</span> <span class="n">SRC_LEN</span><span class="p">];</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">src</span> <span class="o">=</span> <span class="o">&amp;</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="p">..</span> <span class="n">SRC_LEN</span><span class="p">];</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">unsafe</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">do_copy_nonoverlapping_memory</span><span class="p">(</span>
+</span><span class='line'>            <span class="n">dst</span><span class="p">.</span><span class="n">as_mut_ptr</span><span class="p">(),</span>
+</span><span class='line'>            <span class="n">src</span><span class="p">.</span><span class="n">as_ptr</span><span class="p">(),</span>
+</span><span class='line'>            <span class="n">src</span><span class="p">.</span><span class="n">len</span><span class="p">(),</span>
+</span><span class='line'>            <span class="n">BATCHES</span>
+</span><span class='line'>        <span class="p">);</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>    <span class="n">assert</span><span class="o">!</span><span class="p">(</span><span class="n">dst</span><span class="p">.</span><span class="n">iter</span><span class="p">().</span><span class="n">all</span><span class="p">(</span><span class="o">|</span><span class="n">c</span><span class="o">|</span> <span class="o">*</span><span class="n">c</span> <span class="o">==</span> <span class="mi">1</span><span class="p">));</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>With <code>SRC_LEN=4</code> and <code>BATCHES=128</code>, we get this. For fun I added the new
+<code>libtest</code> from <a href="https://github.com/rust-lang/rust/pull/19233">#19233</a> that will
+hopefully land soon. I also added also ran variations that explicitly inlined
+and not inlined the inner function:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="n">test</span> <span class="n">bench_copy_nonoverlapping_memory</span>               <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">50</span> <span class="o">|</span>   <span class="p">[</span><span class="o">-***</span><span class="err">#</span><span class="o">**------</span><span class="p">]</span>                        <span class="o">|</span> <span class="mi">200</span><span class="o">:</span>        <span class="mi">72</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">45</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">bench_copy_nonoverlapping_memory_inline_always</span> <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">50</span> <span class="o">|</span>       <span class="p">[</span><span class="o">---***</span><span class="err">#</span><span class="o">****************----------</span><span class="p">]</span><span class="o">|</span> <span class="mi">100</span><span class="o">:</span>        <span class="mi">65</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">39</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">bench_copy_nonoverlapping_memory_inline_never</span>  <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">500</span> <span class="o">|</span>      <span class="p">[</span><span class="o">------********</span><span class="err">#</span><span class="o">*********-------</span><span class="p">]</span> <span class="o">|</span> <span class="mi">1000</span><span class="o">:</span>       <span class="mi">747</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">393</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So overall it does quite well. Now lets compare with the code I wrote:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="o">&gt;</span> <span class="nb">Writer</span> <span class="k">for</span> <span class="o">&amp;</span><span class="n">&#39;a</span> <span class="k">mut</span> <span class="p">[</span><span class="kt">u8</span><span class="p">]</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">write</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">src</span><span class="o">:</span> <span class="o">&amp;</span><span class="p">[</span><span class="kt">u8</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">IoResult</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="bp">self</span><span class="p">.</span><span class="n">is_empty</span><span class="p">()</span> <span class="p">{</span> <span class="k">return</span> <span class="nb">Err</span><span class="p">(</span><span class="n">io</span><span class="o">::</span><span class="n">standard_error</span><span class="p">(</span><span class="n">io</span><span class="o">::</span><span class="n">EndOfFile</span><span class="p">));</span> <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">dst_len</span> <span class="o">=</span> <span class="bp">self</span><span class="p">.</span><span class="n">len</span><span class="p">();</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">src_len</span> <span class="o">=</span> <span class="n">src</span><span class="p">.</span><span class="n">len</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">write_len</span> <span class="o">=</span> <span class="n">min</span><span class="p">(</span><span class="n">dst_len</span><span class="p">,</span> <span class="n">src_len</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">slice</span><span class="o">::</span><span class="n">bytes</span><span class="o">::</span><span class="n">copy_memory</span><span class="p">(</span><span class="o">*</span><span class="bp">self</span><span class="p">,</span> <span class="n">src</span><span class="p">.</span><span class="n">slice_to</span><span class="p">(</span><span class="n">write_len</span><span class="p">));</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">unsafe</span> <span class="p">{</span>
+</span><span class='line'>            <span class="o">*</span><span class="bp">self</span> <span class="o">=</span> <span class="n">mem</span><span class="o">::</span><span class="n">transmute</span><span class="p">(</span><span class="n">raw</span><span class="o">::</span><span class="n">Slice</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">data</span><span class="o">:</span> <span class="bp">self</span><span class="p">.</span><span class="n">as_ptr</span><span class="p">().</span><span class="n">offset</span><span class="p">(</span><span class="n">write_len</span> <span class="k">as</span> <span class="kt">int</span><span class="p">),</span>
+</span><span class='line'>                <span class="n">len</span><span class="o">:</span> <span class="n">dst_len</span> <span class="o">-</span> <span class="n">write_len</span><span class="p">,</span>
+</span><span class='line'>            <span class="p">});</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="n">src_len</span> <span class="o">&gt;</span> <span class="n">dst_len</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nb">Err</span><span class="p">(</span><span class="n">io</span><span class="o">::</span><span class="n">standard_error</span><span class="p">(</span><span class="n">io</span><span class="o">::</span><span class="n">ShortWrite</span><span class="p">(</span><span class="n">write_len</span><span class="p">)))</span>
+</span><span class='line'>        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nb">Ok</span><span class="p">(())</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And. Well. It didn&rsquo;t do that well.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_slice_writer</span>                             <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">500</span> <span class="o">|</span>   <span class="p">[</span><span class="o">------**</span><span class="err">#</span><span class="o">**--</span><span class="p">]</span>                      <span class="o">|</span> <span class="mi">2000</span><span class="o">:</span>       <span class="mi">920</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">448</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_slice_writer_inline_always</span>               <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">600</span> <span class="o">|</span> <span class="p">[</span><span class="o">-**</span><span class="err">#</span><span class="o">*****---</span><span class="p">]</span>                         <span class="o">|</span> <span class="mi">2000</span><span class="o">:</span>       <span class="mi">711</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">405</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_slice_writer_inline_never</span>                <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">600</span> <span class="o">|</span>   <span class="p">[</span><span class="o">-***</span><span class="err">#</span><span class="o">******---</span><span class="p">]</span>                     <span class="o">|</span> <span class="mi">2000</span><span class="o">:</span>       <span class="mi">838</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">474</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Wow. That&rsquo;s pretty bad compared to the ideal.</p>
+
+<p>Crud. So not only did I add an implementation that&rsquo;s probably going to not work
+with <code>write!</code> and now it turns out the performance is pretty terrible. Inlining
+isn&rsquo;t helping like it did in the unsafe case. So how&rsquo;s
+<a href="https://github.com/rust-lang/rust/blob/master/src/libstd/io/mem.rs#L219">std::io::BufWriter</a>
+compare?</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">struct</span> <span class="n">BufWriter</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">buf</span><span class="o">:</span> <span class="o">&amp;</span><span class="n">&#39;a</span> <span class="k">mut</span> <span class="p">[</span><span class="kt">u8</span><span class="p">],</span>
+</span><span class='line'>    <span class="n">pos</span><span class="o">:</span> <span class="kt">uint</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="o">&gt;</span> <span class="nb">Writer</span> <span class="k">for</span> <span class="n">BufWriter</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">write</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">buf</span><span class="o">:</span> <span class="o">&amp;</span><span class="p">[</span><span class="kt">u8</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">IoResult</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="c1">// return an error if the entire write does not fit in the buffer</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">cap</span> <span class="o">=</span> <span class="k">if</span> <span class="bp">self</span><span class="p">.</span><span class="n">pos</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="p">.</span><span class="n">buf</span><span class="p">.</span><span class="n">len</span><span class="p">()</span> <span class="p">{</span> <span class="mi">0</span> <span class="p">}</span> <span class="k">else</span> <span class="p">{</span> <span class="bp">self</span><span class="p">.</span><span class="n">buf</span><span class="p">.</span><span class="n">len</span><span class="p">()</span> <span class="o">-</span> <span class="bp">self</span><span class="p">.</span><span class="n">pos</span> <span class="p">};</span>
+</span><span class='line'>        <span class="k">if</span> <span class="n">buf</span><span class="p">.</span><span class="n">len</span><span class="p">()</span> <span class="o">&gt;</span> <span class="n">cap</span> <span class="p">{</span>
+</span><span class='line'>            <span class="k">return</span> <span class="nb">Err</span><span class="p">(</span><span class="n">IoError</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">kind</span><span class="o">:</span> <span class="n">io</span><span class="o">::</span><span class="n">OtherIoError</span><span class="p">,</span>
+</span><span class='line'>                <span class="n">desc</span><span class="o">:</span> <span class="s">&quot;Trying to write past end of buffer&quot;</span><span class="p">,</span>
+</span><span class='line'>                <span class="n">detail</span><span class="o">:</span> <span class="nb">None</span>
+</span><span class='line'>            <span class="p">})</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">slice</span><span class="o">::</span><span class="n">bytes</span><span class="o">::</span><span class="n">copy_memory</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">buf</span><span class="p">[</span><span class="k">mut</span> <span class="bp">self</span><span class="p">.</span><span class="n">pos</span><span class="p">..],</span> <span class="n">buf</span><span class="p">);</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">pos</span> <span class="o">+=</span> <span class="n">buf</span><span class="p">.</span><span class="n">len</span><span class="p">();</span>
+</span><span class='line'>        <span class="nb">Ok</span><span class="p">(())</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Here&rsquo;s how it does:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_std_buf_writer</span>                           <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">50</span> <span class="o">|</span>     <span class="p">[</span><span class="o">------**************</span><span class="err">#</span><span class="o">******-------</span><span class="p">]</span> <span class="o">|</span> <span class="mi">100</span><span class="o">:</span>        <span class="mi">79</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">40</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_std_buf_writer_inline_always</span>             <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">50</span> <span class="o">|</span>    <span class="p">[</span><span class="o">-----************</span><span class="err">#</span><span class="o">*********-------</span><span class="p">]</span>  <span class="o">|</span> <span class="mi">100</span><span class="o">:</span>        <span class="mi">75</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">40</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_std_buf_writer_inline_never</span>              <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">600</span> <span class="o">|</span>   <span class="p">[</span><span class="err">#</span><span class="o">****-----</span><span class="p">]</span>                         <span class="o">|</span> <span class="mi">2000</span><span class="o">:</span>       <span class="mi">705</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">337</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>That&rsquo;s just cruel. The optimization gods obviously hate me. So I started
+playing with a lot of
+<a href="https://github.com/erickt/rust-serialization-benchmarks/blob/master/rust/src/writer.rs">variations</a>
+(it&rsquo;s my yeah yeah it&rsquo;s my serialization benchmark suite, I&rsquo;m planning on
+making it more general purpose. Besides it&rsquo;s my suite and I can do whatever I
+want with it, so there):</p>
+
+<ul>
+<li>(BufWriter0): Turning this <code>Writer</code> into a struct wrapper shouldn&rsquo;t do anything, and it
+didn&rsquo;t.</li>
+<li>(BufWriter1): There&rsquo;s error handling, does removing it help? Nope!</li>
+<li>(BufWriter5): There&rsquo;s an implied branch in <code>let write_len = min(dst_len, src_len)</code>. We can
+turn that into the branch-predictor-friendly:</li>
+</ul>
+
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="kd">let</span> <span class="n">x</span> <span class="o">=</span> <span class="p">(</span><span class="n">dst_len</span> <span class="o">&lt;</span> <span class="n">buf_len</span><span class="p">)</span> <span class="k">as</span> <span class="kt">uint</span><span class="p">;</span>
+</span><span class='line'><span class="kd">let</span> <span class="n">write_len</span> <span class="o">=</span> <span class="n">dst_len</span> <span class="o">*</span> <span class="n">x</span> <span class="o">+</span> <span class="n">src_len</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">x</span><span class="p">);</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Doesn&rsquo;t matter, still performs the same.</p>
+
+<ul>
+<li>(BufWriter2): Fine then, optimization gods! Lets remove the branch altogether and just
+  always advance the slice <code>src.len()</code> bytes! Damn the safety! That, of course,
+works. I can hear them giggle.</li>
+<li>(BufWriter3): Maybe, just maybe there&rsquo;s something weird going on with
+  inlining across crates? Lets copy <code>std::io::BufWriter</code> and make sure that
+  it&rsquo;s still nearly optimal. It still is.</li>
+<li>(BufWriter6): Technically the <code>min(dst_len, src_len)</code> is a bounds check, so
+we could switch from the bounds checked <code>std.slice::bytes::copy_memory</code> to
+  the unsafe <code>std::ptr::copy_nonoverlapping_memory</code>, but that also doesn&rsquo;t
+  help.</li>
+<li>(BufWriter7): Might as well and apply the last trick to <code>std::io::BufWriter</code>,
+  and it does shave a couple nanoseconds off. It might be worth pushing it
+  upstream:</li>
+</ul>
+
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_7</span>                             <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">50</span> <span class="o">|</span>   <span class="p">[</span><span class="o">-*</span><span class="err">#</span><span class="o">********--------------------------</span><span class="p">]</span><span class="o">|</span> <span class="mi">100</span><span class="o">:</span>        <span class="mi">55</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">44</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_7_inline_always</span>               <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">50</span> <span class="o">|</span>     <span class="p">[</span><span class="o">---------********</span><span class="err">#</span><span class="o">*********-------</span><span class="p">]</span> <span class="o">|</span> <span class="mi">100</span><span class="o">:</span>        <span class="mi">76</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">39</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_7_inline_never</span>                <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">600</span> <span class="o">|</span>   <span class="p">[</span><span class="o">-***</span><span class="err">#</span><span class="o">****----</span><span class="p">]</span>                      <span class="o">|</span> <span class="mi">2000</span><span class="o">:</span>       <span class="mi">828</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">417</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>(BufWriter4): While I&rsquo;m using one less <code>uint</code> than <code>std::io::BufWriter</code>, I&rsquo;m
+  doing two writes to advance my slice, one to advance the pointer, and one to
+  shrink the length. <code>std::io::BufWriter</code> only has to advance it&rsquo;s <code>pos</code> index.
+  But in this case if instead of treating the slice as a <code>(ptr, length)</code>, we
+  can convert it into a <code>(start_ptr, end_ptr)</code>, where <code>start_ptr=ptr</code>, and
+  <code>end_ptr=ptr+length</code>. This works! Ish:</li>
+</ul>
+
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_4</span>                             <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">80</span> <span class="o">|</span>   <span class="p">[</span><span class="o">--******</span><span class="err">#</span><span class="o">*******-----</span><span class="p">]</span>                <span class="o">|</span> <span class="mi">200</span><span class="o">:</span>       <span class="mi">109</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">59</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_4_inline_always</span>               <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">100</span> <span class="o">|</span>     <span class="p">[</span><span class="o">------***</span><span class="err">#</span><span class="o">******---</span><span class="p">]</span>               <span class="o">|</span> <span class="mi">200</span><span class="o">:</span>       <span class="mi">133</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">44</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_4_inline_never</span>                <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">500</span> <span class="o">|</span>      <span class="p">[</span><span class="o">-----***********</span><span class="err">#</span><span class="o">***********----</span><span class="p">]</span><span class="o">|</span> <span class="mi">1000</span><span class="o">:</span>       <span class="mi">778</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">426</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I know when I&rsquo;m defeated. Oh well. I guess I can at least update
+<code>std::io::BufWriter</code> to support the new error handling approach:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="o">&gt;</span> <span class="n">MyWriter</span> <span class="k">for</span> <span class="n">BufWriter10</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">my_write</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">src</span><span class="o">:</span> <span class="o">&amp;</span><span class="p">[</span><span class="kt">u8</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">IoResult</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">dst_len</span> <span class="o">=</span> <span class="bp">self</span><span class="p">.</span><span class="n">dst</span><span class="p">.</span><span class="n">len</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="bp">self</span><span class="p">.</span><span class="n">pos</span> <span class="o">==</span> <span class="n">dst_len</span> <span class="p">{</span> <span class="k">return</span> <span class="nb">Err</span><span class="p">(</span><span class="n">io</span><span class="o">::</span><span class="n">standard_error</span><span class="p">(</span><span class="n">io</span><span class="o">::</span><span class="n">EndOfFile</span><span class="p">));</span> <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">src_len</span> <span class="o">=</span> <span class="n">src</span><span class="p">.</span><span class="n">len</span><span class="p">();</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">cap</span> <span class="o">=</span> <span class="n">dst_len</span> <span class="o">-</span> <span class="bp">self</span><span class="p">.</span><span class="n">pos</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">write_len</span> <span class="o">=</span> <span class="n">min</span><span class="p">(</span><span class="n">cap</span><span class="p">,</span> <span class="n">src_len</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">slice</span><span class="o">::</span><span class="n">bytes</span><span class="o">::</span><span class="n">copy_memory</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">dst</span><span class="p">[</span><span class="k">mut</span> <span class="bp">self</span><span class="p">.</span><span class="n">pos</span><span class="p">..],</span> <span class="n">src</span><span class="p">[..</span><span class="n">write_len</span><span class="p">]);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="n">src_len</span> <span class="o">&gt;</span> <span class="n">dst_len</span> <span class="p">{</span>
+</span><span class='line'>            <span class="k">return</span> <span class="nb">Err</span><span class="p">(</span><span class="n">io</span><span class="o">::</span><span class="n">standard_error</span><span class="p">(</span><span class="n">io</span><span class="o">::</span><span class="n">ShortWrite</span><span class="p">(</span><span class="n">write_len</span><span class="p">)));</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">pos</span> <span class="o">+=</span> <span class="n">write_len</span><span class="p">;</span>
+</span><span class='line'>        <span class="nb">Ok</span><span class="p">(())</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>How&rsquo;s it do?</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_10</span>                            <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">600</span> <span class="o">|</span> <span class="p">[</span><span class="o">----**</span><span class="err">#</span><span class="o">***--</span><span class="p">]</span>                         <span class="o">|</span> <span class="mi">2000</span><span class="o">:</span>       <span class="mi">841</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">413</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_10_inline_always</span>              <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">600</span> <span class="o">|</span>  <span class="p">[</span><span class="o">----**</span><span class="err">#</span><span class="o">***--</span><span class="p">]</span>                        <span class="o">|</span> <span class="mi">2000</span><span class="o">:</span>       <span class="mi">872</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">387</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_10_inline_never</span>               <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">600</span> <span class="o">|</span>   <span class="p">[</span><span class="o">--******</span><span class="err">#</span><span class="o">**---</span><span class="p">]</span>                     <span class="o">|</span> <span class="mi">2000</span><span class="o">:</span>       <span class="mi">960</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">486</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Grumble grumble. It turns out that if we tweak the <code>copy_memory</code> line to:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'>    <span class="n">slice</span><span class="o">::</span><span class="n">bytes</span><span class="o">::</span><span class="n">copy_memory</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">dst</span><span class="p">[</span><span class="k">mut</span> <span class="bp">self</span><span class="p">.</span><span class="n">pos</span><span class="p">..],</span> <span class="n">src</span><span class="p">);</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>It shaves 674 nanoseconds off the run:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_10</span>                            <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">200</span> <span class="o">|</span><span class="p">[</span><span class="o">---***</span><span class="err">#</span><span class="o">************------------</span><span class="p">]</span>        <span class="o">|</span> <span class="mi">400</span><span class="o">:</span>       <span class="mi">230</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">147</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_10_inline_always</span>              <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">200</span> <span class="o">|</span>   <span class="p">[</span><span class="o">-----********</span><span class="err">#</span><span class="o">*******------</span><span class="p">]</span>         <span class="o">|</span> <span class="mi">400</span><span class="o">:</span>       <span class="mi">280</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">128</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_10_inline_never</span>               <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">600</span> <span class="o">|</span>   <span class="p">[</span><span class="o">--***</span><span class="err">#</span><span class="o">****----</span><span class="p">]</span>                     <span class="o">|</span> <span class="mi">2000</span><span class="o">:</span>       <span class="mi">885</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">475</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>But still no where near where we need to be. That suggests though that always
+cutting down the <code>src</code>, which triggers another bounds check has some measurable
+impact. So maybe I should only shrink the <code>src</code> slice when we know it needs to
+be shrunk?</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="o">&gt;</span> <span class="n">MyWriter</span> <span class="k">for</span> <span class="n">BufWriter11</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">my_write</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">src</span><span class="o">:</span> <span class="o">&amp;</span><span class="p">[</span><span class="kt">u8</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">IoResult</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">dst</span> <span class="o">=</span> <span class="bp">self</span><span class="p">.</span><span class="n">dst</span><span class="p">[</span><span class="k">mut</span> <span class="bp">self</span><span class="p">.</span><span class="n">pos</span><span class="p">..];</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">dst_len</span> <span class="o">=</span> <span class="n">dst</span><span class="p">.</span><span class="n">len</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="n">dst_len</span> <span class="o">==</span> <span class="mi">0</span> <span class="p">{</span>
+</span><span class='line'>            <span class="k">return</span> <span class="nb">Err</span><span class="p">(</span><span class="n">io</span><span class="o">::</span><span class="n">standard_error</span><span class="p">(</span><span class="n">io</span><span class="o">::</span><span class="n">EndOfFile</span><span class="p">));</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">src_len</span> <span class="o">=</span> <span class="n">src</span><span class="p">.</span><span class="n">len</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="n">dst_len</span> <span class="o">&gt;=</span> <span class="n">src_len</span> <span class="p">{</span>
+</span><span class='line'>            <span class="k">unsafe</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">ptr</span><span class="o">::</span><span class="n">copy_nonoverlapping_memory</span><span class="p">(</span>
+</span><span class='line'>                    <span class="n">dst</span><span class="p">.</span><span class="n">as_mut_ptr</span><span class="p">(),</span>
+</span><span class='line'>                    <span class="n">src</span><span class="p">.</span><span class="n">as_ptr</span><span class="p">(),</span>
+</span><span class='line'>                    <span class="n">src_len</span><span class="p">);</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>              <span class="bp">self</span><span class="p">.</span><span class="n">pos</span> <span class="o">+=</span> <span class="n">src_len</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="nb">Ok</span><span class="p">(())</span>
+</span><span class='line'>        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>            <span class="k">unsafe</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">ptr</span><span class="o">::</span><span class="n">copy_nonoverlapping_memory</span><span class="p">(</span>
+</span><span class='line'>                    <span class="n">dst</span><span class="p">.</span><span class="n">as_mut_ptr</span><span class="p">(),</span>
+</span><span class='line'>                    <span class="n">src</span><span class="p">.</span><span class="n">as_ptr</span><span class="p">(),</span>
+</span><span class='line'>                    <span class="n">dst_len</span><span class="p">);</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>              <span class="bp">self</span><span class="p">.</span><span class="n">pos</span> <span class="o">+=</span> <span class="n">dst_len</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="nb">Err</span><span class="p">(</span><span class="n">io</span><span class="o">::</span><span class="n">standard_error</span><span class="p">(</span><span class="n">io</span><span class="o">::</span><span class="n">ShortWrite</span><span class="p">(</span><span class="n">dst_len</span><span class="p">)))</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Lets see how it failed this time&hellip;</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_11</span>                            <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">60</span> <span class="o">|</span>      <span class="p">[</span><span class="o">------********</span><span class="err">#</span><span class="o">*********-----</span><span class="p">]</span>     <span class="o">|</span> <span class="mi">100</span><span class="o">:</span>        <span class="mi">79</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">28</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_11_inline_always</span>              <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">60</span> <span class="o">|</span><span class="p">[</span><span class="o">-------******</span><span class="err">#</span><span class="o">*************-----------</span><span class="p">]</span>  <span class="o">|</span> <span class="mi">100</span><span class="o">:</span>        <span class="mi">72</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">35</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_11_inline_never</span>               <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">600</span> <span class="o">|</span>  <span class="p">[</span><span class="o">--***</span><span class="err">#</span><span class="o">***----</span><span class="p">]</span>                       <span class="o">|</span> <span class="mi">2000</span><span class="o">:</span>       <span class="mi">835</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">423</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>No way. That actually worked?! That&rsquo;s awesome! I&rsquo;ll carve that out into another
+PR. Maybe it&rsquo;ll work for my original version that doesn&rsquo;t use a <code>pos</code>?</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="o">&gt;</span> <span class="n">MyWriter</span> <span class="k">for</span> <span class="n">BufWriter12</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">my_write</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">src</span><span class="o">:</span> <span class="o">&amp;</span><span class="p">[</span><span class="kt">u8</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">IoResult</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">dst_len</span> <span class="o">=</span> <span class="bp">self</span><span class="p">.</span><span class="n">dst</span><span class="p">.</span><span class="n">len</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="n">dst_len</span> <span class="o">==</span> <span class="mi">0</span> <span class="p">{</span>
+</span><span class='line'>            <span class="k">return</span> <span class="nb">Err</span><span class="p">(</span><span class="n">io</span><span class="o">::</span><span class="n">standard_error</span><span class="p">(</span><span class="n">io</span><span class="o">::</span><span class="n">EndOfFile</span><span class="p">));</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">src_len</span> <span class="o">=</span> <span class="n">src</span><span class="p">.</span><span class="n">len</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="n">dst_len</span> <span class="o">&gt;=</span> <span class="n">src_len</span> <span class="p">{</span>
+</span><span class='line'>            <span class="k">unsafe</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">ptr</span><span class="o">::</span><span class="n">copy_nonoverlapping_memory</span><span class="p">(</span>
+</span><span class='line'>                    <span class="bp">self</span><span class="p">.</span><span class="n">dst</span><span class="p">.</span><span class="n">as_mut_ptr</span><span class="p">(),</span>
+</span><span class='line'>                    <span class="n">src</span><span class="p">.</span><span class="n">as_ptr</span><span class="p">(),</span>
+</span><span class='line'>                    <span class="n">src_len</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="bp">self</span><span class="p">.</span><span class="n">dst</span> <span class="o">=</span> <span class="n">mem</span><span class="o">::</span><span class="n">transmute</span><span class="p">(</span><span class="n">raw</span><span class="o">::</span><span class="n">Slice</span> <span class="p">{</span>
+</span><span class='line'>                    <span class="n">data</span><span class="o">:</span> <span class="bp">self</span><span class="p">.</span><span class="n">dst</span><span class="p">.</span><span class="n">as_ptr</span><span class="p">().</span><span class="n">offset</span><span class="p">(</span><span class="n">src_len</span> <span class="k">as</span> <span class="kt">int</span><span class="p">),</span>
+</span><span class='line'>                    <span class="n">len</span><span class="o">:</span> <span class="n">dst_len</span> <span class="o">-</span> <span class="n">src_len</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">});</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="nb">Ok</span><span class="p">(())</span>
+</span><span class='line'>        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>            <span class="k">unsafe</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">ptr</span><span class="o">::</span><span class="n">copy_nonoverlapping_memory</span><span class="p">(</span>
+</span><span class='line'>                    <span class="bp">self</span><span class="p">.</span><span class="n">dst</span><span class="p">.</span><span class="n">as_mut_ptr</span><span class="p">(),</span>
+</span><span class='line'>                    <span class="n">src</span><span class="p">.</span><span class="n">as_ptr</span><span class="p">(),</span>
+</span><span class='line'>                    <span class="n">dst_len</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="bp">self</span><span class="p">.</span><span class="n">dst</span> <span class="o">=</span> <span class="n">mem</span><span class="o">::</span><span class="n">transmute</span><span class="p">(</span><span class="n">raw</span><span class="o">::</span><span class="n">Slice</span> <span class="p">{</span>
+</span><span class='line'>                    <span class="n">data</span><span class="o">:</span> <span class="bp">self</span><span class="p">.</span><span class="n">dst</span><span class="p">.</span><span class="n">as_ptr</span><span class="p">().</span><span class="n">offset</span><span class="p">(</span><span class="n">dst_len</span> <span class="k">as</span> <span class="kt">int</span><span class="p">),</span>
+</span><span class='line'>                    <span class="n">len</span><span class="o">:</span> <span class="mi">0</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">});</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="nb">Err</span><span class="p">(</span><span class="n">io</span><span class="o">::</span><span class="n">standard_error</span><span class="p">(</span><span class="n">io</span><span class="o">::</span><span class="n">ShortWrite</span><span class="p">(</span><span class="n">dst_len</span><span class="p">)))</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And yep, just as fast!</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_12</span>                            <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">50</span> <span class="o">|</span><span class="p">[</span><span class="o">**</span><span class="err">#</span><span class="o">*----------------------------------</span><span class="p">]</span>   <span class="o">|</span> <span class="mi">80</span><span class="o">:</span>        <span class="mi">51</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">26</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_12_inline_always</span>              <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">50</span> <span class="o">|</span>  <span class="p">[</span><span class="o">--------**********</span><span class="err">#</span><span class="o">********------------</span><span class="p">]</span><span class="o">|</span> <span class="mi">90</span><span class="o">:</span>        <span class="mi">69</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">36</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_buf_writer_12_inline_never</span>               <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">800</span> <span class="o">|</span>  <span class="p">[</span><span class="o">---**</span><span class="err">#</span><span class="o">***-</span><span class="p">]</span>                          <span class="o">|</span> <span class="mi">2000</span><span class="o">:</span>      <span class="mi">1000</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">263</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>At this point, both solutions are approximately just as fast as the unsafe
+<code>ptr::copy_nonoverlapping_memory</code>! So that&rsquo;s awesome. Now would anyone really
+care enough about the extra <code>uint</code>?  There may be a few very specialized cases
+where that extra <code>uint</code> could cause a problem, but I&rsquo;m not sure if it&rsquo;s worth
+it. What do you all think?</p>
+
+<hr />
+
+<p>I thought that was good, but since I&rsquo;m already here, how&rsquo;s the new <code>Vec&lt;u8&gt;</code>
+writer doing? Here&rsquo;s the driver:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">impl</span> <span class="nb">Writer</span> <span class="k">for</span> <span class="n">Vec</span><span class="o">&lt;</span><span class="kt">u8</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">write</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">buf</span><span class="o">:</span> <span class="o">&amp;</span><span class="p">[</span><span class="kt">u8</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">IoResult</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">push_all</span><span class="p">(</span><span class="n">buf</span><span class="p">);</span>
+</span><span class='line'>        <span class="nb">Ok</span><span class="p">(())</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span> <span class="nb">Writer</span> <span class="k">for</span> <span class="n">Vec</span><span class="o">&lt;</span><span class="kt">u8</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">write</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">buf</span><span class="o">:</span> <span class="o">&amp;</span><span class="p">[</span><span class="kt">u8</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">IoResult</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">push_all</span><span class="p">(</span><span class="n">buf</span><span class="p">);</span>
+</span><span class='line'>        <span class="nb">Ok</span><span class="p">(())</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#[bench]</span>
+</span><span class='line'><span class="k">fn</span> <span class="n">bench_std_vec_writer</span><span class="p">(</span><span class="n">b</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">test</span><span class="o">::</span><span class="n">Bencher</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="k">mut</span> <span class="n">dst</span> <span class="o">=</span> <span class="n">Vec</span><span class="o">::</span><span class="n">with_capacity</span><span class="p">(</span><span class="n">BATCHES</span> <span class="o">*</span> <span class="n">SRC_LEN</span><span class="p">);</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">src</span> <span class="o">=</span> <span class="o">&amp;</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="p">..</span> <span class="n">SRC_LEN</span><span class="p">];</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">b</span><span class="p">.</span><span class="n">iter</span><span class="p">(</span><span class="o">||</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">dst</span><span class="p">.</span><span class="n">clear</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">do_std_writes</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">dst</span><span class="p">,</span> <span class="n">src</span><span class="p">,</span> <span class="n">BATCHES</span><span class="p">);</span>
+</span><span class='line'>    <span class="p">})</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And the results:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_std_vec_writer</span>                           <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">1000</span> <span class="o">|</span> <span class="p">[</span><span class="o">----*****</span><span class="err">#</span><span class="o">*****--------</span><span class="p">]</span>             <span class="o">|</span> <span class="mi">2000</span><span class="o">:</span>      <span class="mi">1248</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">588</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_std_vec_writer_inline_always</span>             <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">900</span> <span class="o">|</span>   <span class="p">[</span><span class="o">----*</span><span class="err">#</span><span class="o">***--</span><span class="p">]</span>                        <span class="o">|</span> <span class="mi">2000</span><span class="o">:</span>      <span class="mi">1125</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">282</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_std_vec_writer_inline_never</span>              <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">1000</span> <span class="o">|</span>  <span class="p">[</span><span class="o">----***</span><span class="err">#</span><span class="o">*****--------</span><span class="p">]</span>              <span class="o">|</span> <span class="mi">2000</span><span class="o">:</span>      <span class="mi">1227</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">516</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Wow. That&rsquo;s pretty terrible. Something weird must be going on with
+<code>Vec::push_all</code>. (Maybe that&rsquo;s what caused my serialization benchmarks to slow
+1/3?). Lets skip it:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="o">&gt;</span> <span class="n">MyWriter</span> <span class="k">for</span> <span class="n">VecWriter1</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">my_write</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">src</span><span class="o">:</span> <span class="o">&amp;</span><span class="p">[</span><span class="kt">u8</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">IoResult</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">src_len</span> <span class="o">=</span> <span class="n">src</span><span class="p">.</span><span class="n">len</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">dst</span><span class="p">.</span><span class="n">reserve</span><span class="p">(</span><span class="n">src_len</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">dst</span> <span class="o">=</span> <span class="bp">self</span><span class="p">.</span><span class="n">dst</span><span class="p">.</span><span class="n">as_mut_slice</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">unsafe</span> <span class="p">{</span>
+</span><span class='line'>            <span class="c1">// we reserved enough room in `dst` to store `src`.</span>
+</span><span class='line'>            <span class="n">ptr</span><span class="o">::</span><span class="n">copy_nonoverlapping_memory</span><span class="p">(</span>
+</span><span class='line'>                <span class="n">dst</span><span class="p">.</span><span class="n">as_mut_ptr</span><span class="p">(),</span>
+</span><span class='line'>                <span class="n">src</span><span class="p">.</span><span class="n">as_ptr</span><span class="p">(),</span>
+</span><span class='line'>                <span class="n">src_len</span><span class="p">);</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="nb">Ok</span><span class="p">(())</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And it looks a bit better, but not perfect:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_vec_writer_1</span>                             <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">100</span> <span class="o">|</span>         <span class="p">[</span><span class="o">------*********</span><span class="err">#</span><span class="o">*****--------</span><span class="p">]</span> <span class="o">|</span> <span class="mi">200</span><span class="o">:</span>       <span class="mi">160</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">68</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_vec_writer_1_inline_always</span>               <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">100</span> <span class="o">|</span>     <span class="p">[</span><span class="o">--------****</span><span class="err">#</span><span class="o">**--</span><span class="p">]</span>                 <span class="o">|</span> <span class="mi">300</span><span class="o">:</span>       <span class="mi">182</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">79</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_vec_writer_1_inline_never</span>                <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">600</span> <span class="o">|</span>   <span class="p">[</span><span class="o">---****</span><span class="err">#</span><span class="o">**--</span><span class="p">]</span>                       <span class="o">|</span> <span class="mi">2000</span><span class="o">:</span>       <span class="mi">952</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">399</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>There&rsquo;s even less going on here than before. The only difference is that
+reserve call. Commenting it out gets us back to <code>copy_nonoverlapping_memory</code>
+territory:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_vec_writer_1</span>                             <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">70</span> <span class="o">|</span> <span class="p">[</span><span class="o">----------------*********</span><span class="err">#</span><span class="o">******-------</span><span class="p">]</span><span class="o">|</span> <span class="mi">100</span><span class="o">:</span>        <span class="mi">89</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">27</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_vec_writer_1_inline_always</span>               <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">50</span> <span class="o">|</span>   <span class="p">[</span><span class="o">-***</span><span class="err">#</span><span class="o">******--</span><span class="p">]</span>                        <span class="o">|</span> <span class="mi">200</span><span class="o">:</span>        <span class="mi">75</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">46</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">writer</span><span class="o">::</span><span class="n">bench_vec_writer_1_inline_never</span>                <span class="p">...</span> <span class="n">bench</span><span class="o">:</span> <span class="mi">500</span> <span class="o">|</span>   <span class="p">[</span><span class="o">--***</span><span class="err">#</span><span class="o">***---</span><span class="p">]</span>                       <span class="o">|</span> <span class="mi">2000</span><span class="o">:</span>       <span class="mi">775</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">433</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Unfortunately it&rsquo;s getting pretty late, so rather than wait until the next time
+to dive into this, I&rsquo;ll leave it up to you all. Does anyone know why <code>reserve</code>
+is causing so much trouble here?</p>
+
+<hr />
+
+<p>PS: While I was working on this, I saw
+<a href="https://github.com/erickt/rust-serialization-benchmarks/pull/2">stevencheg</a>
+submitted a patch to speed up the protocol buffer support. But when I ran the
+tests, everything was about 40% slower than the last benchmark
+<a href="http://erickt.github.io/blog/2014/11/13/benchmarks-2/">post</a>! Something
+happened with Rust&rsquo;s performance over these past couple weeks!</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="n">test</span> <span class="n">goser</span><span class="o">::</span><span class="n">bincode</span><span class="o">::</span><span class="n">bench_decoder</span>                          <span class="p">...</span> <span class="n">bench</span><span class="o">:</span>      <span class="mi">7682</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">3680</span><span class="p">)</span> <span class="o">=</span> <span class="mi">52</span> <span class="n">MB</span><span class="o">/</span><span class="n">s</span>
+</span><span class='line'><span class="n">test</span> <span class="n">goser</span><span class="o">::</span><span class="n">bincode</span><span class="o">::</span><span class="n">bench_encoder</span>                          <span class="p">...</span> <span class="n">bench</span><span class="o">:</span>       <span class="mi">516</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">265</span><span class="p">)</span> <span class="o">=</span> <span class="mi">775</span> <span class="n">MB</span><span class="o">/</span><span class="n">s</span>
+</span><span class='line'><span class="n">test</span> <span class="n">goser</span><span class="o">::</span><span class="n">bincode</span><span class="o">::</span><span class="n">bench_populate</span>                         <span class="p">...</span> <span class="n">bench</span><span class="o">:</span>      <span class="mi">1504</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">324</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">goser</span><span class="o">::</span><span class="n">capnp</span><span class="o">::</span><span class="n">bench_deserialize</span>                        <span class="p">...</span> <span class="n">bench</span><span class="o">:</span>       <span class="mi">251</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">140</span><span class="p">)</span> <span class="o">=</span> <span class="mi">1784</span> <span class="n">MB</span><span class="o">/</span><span class="n">s</span>
+</span><span class='line'><span class="n">test</span> <span class="n">goser</span><span class="o">::</span><span class="n">capnp</span><span class="o">::</span><span class="n">bench_deserialize_packed_unbuffered</span>      <span class="p">...</span> <span class="n">bench</span><span class="o">:</span>      <span class="mi">1344</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">533</span><span class="p">)</span> <span class="o">=</span> <span class="mi">250</span> <span class="n">MB</span><span class="o">/</span><span class="n">s</span>
+</span><span class='line'><span class="n">test</span> <span class="n">goser</span><span class="o">::</span><span class="n">capnp</span><span class="o">::</span><span class="n">bench_populate</span>                           <span class="p">...</span> <span class="n">bench</span><span class="o">:</span>       <span class="mi">663</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">236</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">goser</span><span class="o">::</span><span class="n">capnp</span><span class="o">::</span><span class="n">bench_serialize</span>                          <span class="p">...</span> <span class="n">bench</span><span class="o">:</span>       <span class="mi">144</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">37</span><span class="p">)</span> <span class="o">=</span> <span class="mi">3111</span> <span class="n">MB</span><span class="o">/</span><span class="n">s</span>
+</span><span class='line'><span class="n">test</span> <span class="n">goser</span><span class="o">::</span><span class="n">capnp</span><span class="o">::</span><span class="n">bench_serialize_packed_unbuffered</span>        <span class="p">...</span> <span class="n">bench</span><span class="o">:</span>       <span class="mi">913</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">436</span><span class="p">)</span> <span class="o">=</span> <span class="mi">369</span> <span class="n">MB</span><span class="o">/</span><span class="n">s</span>
+</span><span class='line'><span class="n">test</span> <span class="n">goser</span><span class="o">::</span><span class="n">msgpack</span><span class="o">::</span><span class="n">bench_decoder</span>                          <span class="p">...</span> <span class="n">bench</span><span class="o">:</span>      <span class="mi">3411</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">1837</span><span class="p">)</span> <span class="o">=</span> <span class="mi">84</span> <span class="n">MB</span><span class="o">/</span><span class="n">s</span>
+</span><span class='line'><span class="n">test</span> <span class="n">goser</span><span class="o">::</span><span class="n">msgpack</span><span class="o">::</span><span class="n">bench_encoder</span>                          <span class="p">...</span> <span class="n">bench</span><span class="o">:</span>       <span class="mi">961</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">477</span><span class="p">)</span> <span class="o">=</span> <span class="mi">298</span> <span class="n">MB</span><span class="o">/</span><span class="n">s</span>
+</span><span class='line'><span class="n">test</span> <span class="n">goser</span><span class="o">::</span><span class="n">msgpack</span><span class="o">::</span><span class="n">bench_populate</span>                         <span class="p">...</span> <span class="n">bench</span><span class="o">:</span>      <span class="mi">1564</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">453</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">goser</span><span class="o">::</span><span class="n">protobuf</span><span class="o">::</span><span class="n">bench_decoder</span>                         <span class="p">...</span> <span class="n">bench</span><span class="o">:</span>      <span class="mi">3116</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">1485</span><span class="p">)</span> <span class="o">=</span> <span class="mi">91</span> <span class="n">MB</span><span class="o">/</span><span class="n">s</span>
+</span><span class='line'><span class="n">test</span> <span class="n">goser</span><span class="o">::</span><span class="n">protobuf</span><span class="o">::</span><span class="n">bench_encoder</span>                         <span class="p">...</span> <span class="n">bench</span><span class="o">:</span>      <span class="mi">1220</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">482</span><span class="p">)</span> <span class="o">=</span> <span class="mi">234</span> <span class="n">MB</span><span class="o">/</span><span class="n">s</span>
+</span><span class='line'><span class="n">test</span> <span class="n">goser</span><span class="o">::</span><span class="n">protobuf</span><span class="o">::</span><span class="n">bench_populate</span>                        <span class="p">...</span> <span class="n">bench</span><span class="o">:</span>       <span class="mi">942</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">836</span><span class="p">)</span>
+</span><span class='line'><span class="n">test</span> <span class="n">goser</span><span class="o">::</span><span class="n">serialize_json</span><span class="o">::</span><span class="n">bench_decoder</span>                   <span class="p">...</span> <span class="n">bench</span><span class="o">:</span>     <span class="mi">31934</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">16186</span><span class="p">)</span> <span class="o">=</span> <span class="mi">18</span> <span class="n">MB</span><span class="o">/</span><span class="n">s</span>
+</span><span class='line'><span class="n">test</span> <span class="n">goser</span><span class="o">::</span><span class="n">serialize_json</span><span class="o">::</span><span class="n">bench_encoder</span>                   <span class="p">...</span> <span class="n">bench</span><span class="o">:</span>      <span class="mi">8481</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">3392</span><span class="p">)</span> <span class="o">=</span> <span class="mi">71</span> <span class="n">MB</span><span class="o">/</span><span class="n">s</span>
+</span><span class='line'><span class="n">test</span> <span class="n">goser</span><span class="o">::</span><span class="n">serialize_json</span><span class="o">::</span><span class="n">bench_populate</span>                  <span class="p">...</span> <span class="n">bench</span><span class="o">:</span>      <span class="mi">1471</span> <span class="n">ns</span><span class="o">/</span><span class="n">iter</span> <span class="p">(</span><span class="o">+/-</span> <span class="mi">426</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Chasing an EPROTOTYPE Through Rust, Sendto, and the OSX Kernel With C-Reduce]]></title>
@@ -585,7 +1372,7 @@ unnecessary structs and methods. I was finally left with:</p>
 of the post. Pretty cool that we got here without much effort?</p>
 
 <p>Now At this point you might say to yourself that couldn&rsquo;t I have extracted this
-out myself?  And yead, you would be right. This is a pretty much a c-in-rust
+out myself?  And yeah, you would be right. This is a pretty much a c-in-rust
 implementation of this bug. But what&rsquo;s great about using C-Reduce here is that
 I only had to make some very rough guesses about what files were and were not
 important to include in my <code>test.rs</code>. Eventually when we get some rust plugins
