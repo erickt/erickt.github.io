@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Benchmarking | Tilting at Rabbit Holes]]></title>
   <link href="http://erickt.github.io/blog/categories/benchmarking/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2014-11-23T21:33:54-08:00</updated>
+  <updated>2014-11-23T21:37:38-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -14,9 +14,9 @@
 
   
   <entry>
-    <title type="html"><![CDATA[Benchmarking Is Confusing]]></title>
+    <title type="html"><![CDATA[Benchmarking Is Confusing in Low Level Rust]]></title>
     <link href="http://erickt.github.io/blog/2014/11/22/benchmarking-is-confusing/"/>
-    <updated>2014-11-22T12:10:28-08:00</updated>
+    <updated>2014-11-22T12:10:29-08:00</updated>
     <id>http://erickt.github.io/blog/2014/11/22/benchmarking-is-confusing</id>
     <content type="html"><![CDATA[<p>Low level benchmarking is confusing and non-intuitive.</p>
 
