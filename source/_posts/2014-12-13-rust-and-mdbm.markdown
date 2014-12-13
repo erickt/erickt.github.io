@@ -51,7 +51,7 @@ By convention, we put bindgen packages into `$name-sys`, so make that crate as
 well:
 
 ```
-% crate new --no-git mdbm-sys
+% cargo new --no-git mdbm-sys
 % cd mdbm-sys
 ```
 
