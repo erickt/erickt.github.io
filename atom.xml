@@ -4,7 +4,7 @@
   <title><![CDATA[Tilting at Rabbit Holes]]></title>
   <link href="http://erickt.github.io/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2014-12-14T10:34:06-08:00</updated>
+  <updated>2014-12-14T10:37:06-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -978,9 +978,6 @@ properly:</p>
 <span class='line-number'>30</span>
 <span class='line-number'>31</span>
 <span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
 </pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">struct</span> <span class="n">AssertSerializer</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">&gt;</span> <span class="p">{</span>
 </span><span class='line'>    <span class="n">iter</span><span class="o">:</span> <span class="n">Iter</span><span class="p">,</span>
 </span><span class='line'><span class="p">}</span>
@@ -993,10 +990,7 @@ properly:</p>
 </span><span class='line'>    <span class="p">}</span>
 </span><span class='line'>
 </span><span class='line'>    <span class="k">fn</span> <span class="n">serialize</span><span class="o">&lt;</span><span class="nl">&#39;b</span><span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="o">:</span> <span class="n">Token</span><span class="o">&lt;</span><span class="nl">&#39;b</span><span class="o">&gt;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
-</span><span class='line'>        <span class="kd">let</span> <span class="n">t</span> <span class="o">=</span> <span class="k">match</span> <span class="bp">self</span><span class="p">.</span><span class="n">iter</span><span class="p">.</span><span class="n">next</span><span class="p">()</span> <span class="p">{</span>
-</span><span class='line'>            <span class="nb">Some</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="n">t</span><span class="p">,</span>
-</span><span class='line'>            <span class="nb">None</span> <span class="o">=&gt;</span> <span class="p">{</span> <span class="n">panic</span><span class="o">!</span><span class="p">();</span> <span class="p">}</span>
-</span><span class='line'>        <span class="p">};</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">t</span> <span class="o">=</span> <span class="bp">self</span><span class="p">.</span><span class="n">iter</span><span class="p">.</span><span class="n">next</span><span class="p">().</span><span class="n">unwrap</span><span class="p">();</span>
 </span><span class='line'>
 </span><span class='line'>        <span class="n">assert_eq</span><span class="o">!</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">token</span><span class="p">);</span>
 </span><span class='line'>

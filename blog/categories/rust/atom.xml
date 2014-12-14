@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Rust | Tilting at Rabbit Holes]]></title>
   <link href="http://erickt.github.io/blog/categories/rust/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2014-12-14T10:34:06-08:00</updated>
+  <updated>2014-12-14T10:37:06-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -540,10 +540,7 @@ impl&lt;'a, Iter: Iterator&lt;Token&lt;'a&gt;&gt;&gt; AssertSerializer&lt;Iter&g
     }
 
     fn serialize&lt;'b&gt;(&amp;mut self, token: Token&lt;'b&gt;) -&gt; Result&lt;(), Error&gt; {
-        let t = match self.iter.next() {
-            Some(t) =&gt; t,
-            None =&gt; { panic!(); }
-        };
+        let t = self.iter.next().unwrap();
 
         assert_eq!(t, token);
 
