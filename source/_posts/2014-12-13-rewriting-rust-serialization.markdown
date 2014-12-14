@@ -1,13 +1,16 @@
 ---
 layout: post
 title: "Rewriting Rust Serialization, Part 3: Serde"
-date: 2014-12-13 13:42:18 -0800
+date: 2014-12-13 14:40:18 -0800
 comments: true
 categories: [rust, serialization]
 ---
 
-There's been a long digression over the past month ([possible kernel bugs](),
-[benchmarking Writers](), and [don't believe in magic, folks]()), but I'm back
+There's been a long digression over the past month
+([possible kernel bugs](http://erickt.github.io/blog/2014/11/19/adventures-in-debugging-a-potential-osx-kernel-bug/),
+[benchmarking Writers](http://erickt.github.io/blog/2014/11/22/benchmarking-is-confusing/),
+and
+[don't believe in magic, folks](https://github.com/rust-lang/rust/pull/19574)), but I'm back
 into serialization. Woo! Here's
 [part 1](http://erickt.github.io/blog/2014/10/28/serialization/) and
 [part 2](http://erickt.github.io/blog/2014/11/03/performance/)), Rust's
@@ -18,9 +21,10 @@ to catch up.
 So `libserialize` has some pretty serious downsides. It's slow, it's got this
 weird recursive closure thing going on, and it can't even represent enum types
 like a `serialize::json::Json`. We need a new solution, and while I was at it,
-we ended up with two: [serde]() and [serde2](). Both are different approaches
-to trying to address these problems. The biggest one being the type
-representation problem.
+we ended up with two: [serde](https://github.com/erickt/rust-serde) and
+[serde2](https://github.com/erickt/rust-serde/tree/master/serde2). Both are
+different approaches to trying to address these problems. The biggest one being
+the type representation problem.
 
 ## Serde Version 1
 
@@ -190,8 +194,7 @@ pub trait Deserializer<E>: Iterator<Result<Token, E>> {
 The `Deserialize` trait is kept pretty slim, and is how lookahead is
 implemented. `Deserializer` is an enhanced `Iterator<Result<Token, E>>`, with
 many helpful default methods. Here are them in action. First we'll start with
-what's probably the simplest `Deserializer`, which just wraps a prebuilt
-`Vec<Token>`:
+what's probably the simplest `Deserializer`, which just wraps a `Vec<Token>`:
 
 
 ```rust
@@ -366,7 +369,7 @@ Last is a struct deserializer. This relies on a simple state machine in order
 to deserialize from out of order maps:
 
 ```rust
-struct Inner {
+struct Foo {
     a: (),
     b: uint,
     c: TreeMap<String, Option<char>>,
@@ -375,10 +378,10 @@ struct Inner {
 impl<
     D: Deserializer<E>,
     E
-> Deserialize<D, E> for Inner {
+> Deserialize<D, E> for Foo {
     #[inline]
-    fn deserialize_token(d: &mut D, token: Token) -> Result<Inner, E> {
-        try!(d.expect_struct_start(token, "Inner"));
+    fn deserialize_token(d: &mut D, token: Token) -> Result<Foo, E> {
+        try!(d.expect_struct_start(token, "Foo"));
 
         let mut a = None;
         let mut b = None;
@@ -401,7 +404,7 @@ impl<
             }
         }
 
-        Ok(Inner { a: a.unwrap(), b: b.unwrap(), c: c.unwrap() })
+        Ok(Foo { a: a.unwrap(), b: b.unwrap(), c: c.unwrap() })
     }
 }
 ```
@@ -608,7 +611,7 @@ pub trait Serializer<E> {
 And structs:
 
 ```rust
-struct Inner {
+struct Foo {
     a: (),
     b: uint,
     c: TreeMap<String, Option<char>>,
@@ -617,9 +620,9 @@ struct Inner {
 impl<
   S: Serializer<E>,
   E
-> Serialize<S, E> for Inner {
+> Serialize<S, E> for Foo {
     fn serialize(&self, s: &mut S) -> Result<(), E> {
-        try!(s.serialize_struct_start("Inner", 2u));
+        try!(s.serialize_struct_start("Foo", 2u));
         try!(s.serialize_struct_elt("a", &self.a));
         try!(s.serialize_struct_elt("b", &self.b));
         try!(s.serialize_struct_elt("c", &self.c));
@@ -633,122 +636,64 @@ Much simpler than deserialization.
 
 ## Performance
 
+So how does it perform? Here's the serialization benchmarks, with yet another
+ordering. This time sorted by the performance:
 
+| language | library         | format                 | serialization (MB/s) |
+| -------- | --------------- | ---------------------- | -------------------- |
+| Rust     | capnproto-rust  | Cap'n Proto (unpacked) | 4349                 |
+| Go       | go-capnproto    | Cap'n Proto            | 3824.20              |
+| Rust     | bincode         | Binary                 | 1020                 |
+| Go       | gogoprotobuf    | Protocol Buffers       | 596.78               |
+| Rust     | capnproto-rust  | Cap'n Proto (packed)   | 583                  |
+| Rust     | rust-msgpack    | MessagePack            | 397                  |
+| Rust     | rust-protobuf   | Protocol Buffers       | 357                  |
+| C++      | rapidjson       | JSON                   | 304                  |
+| **Rust** | **serde::json** | **JSON**               | **222**              |
+| Go       | goprotobuf      | Protocol Buffers       | 214.68               |
+| Go       | ffjson          | JSON                   | 147.37               |
+| Rust     | serialize::json | JSON                   | 147                  |
+| Go       | encoding/json   | JSON                   | 80.49                |
 
+`serde::json` is doing pretty good! It still has got a ways to go to catch up
+to [rapidjson](https://github.com/miloyip/rapidjson), but it's pretty cool it's
+beating [goprotobuf](https://github.com/golang/protobuf) out of the box :)
 
+Here are the deserialization numbers:
 
+| language | library         | format                  | deserialization (MB/s) |
+| -------- | --------------- | ----------------------- | ---------------------- |
+| Rust     | capnproto-rust  | Cap'n Proto (unpacked)  | 2185                   |
+| Go       | go-capnproto    | Cap'n Proto (zero copy) | 1407.95                |
+| Go       | go-capnproto    | Cap'n Proto             | 711.77                 |
+| Rust     | capnproto-rust  | Cap'n Proto (packed)    | 351                    |
+| Go       | gogoprotobuf    | Protocol Buffers        | 272.68                 |
+| C++      | rapidjson       | JSON (sax)              | 189                    |
+| C++      | rapidjson       | JSON (dom)              | 162                    |
+| Rust     | rust-msgpack    | MessagePack             | 138                    |
+| Rust     | rust-protobuf   | Protocol Buffers        | 129                    |
+| Go       | ffjson          | JSON                    | 95.06                  |
+| Rust     | bincode         | Binary                  | 80                     |
+| Go       | goprotobuf      | Protocol Buffers        | 79.78                  |
+| **Rust** | **serde::json** | **JSON**                | **67**                 |
+| Rust     | serialize::json | JSON                    | 24                     |
+| Go       | encoding/json   | JSON                    | 22.79                  |
 
+Well on the plus side, `serde::json` nearly 3 times faster than
+`libserialize::json`. On the downside rapidjson is nearly 3 times faster than
+us in it's SAX style parsing. Even the newly added deserialization support in
+[ffjson](https://github.com/pquerna/ffjson) is 1.4 times faster than us. So we
+got more work cut out for us!
 
+Next time, serde2!
 
+PS: I'm definitely getting close to the end of my story, and while I have some
+better numbers with serde2, nothing is quite putting me in the rapidjson
+range. Anyone want to help optimize
+[serde](https://github.com/erickt/rust-serde)? I would greatly appreciate the help!
 
-
-
-
-
-
-
---
-
-| language | library           | serialization (MB/s) | deserialization (MB/s) |
-| -------- | ----------------- | -------------------- | ---------------------- |
-| Rust     | serde::json       | 348                  | 69                     |
-
-
-
-
-
-serialization:
-
-| language | library         | speed        |
-| -------- | --------------- | ------------ |
-| C++      | rapidjson       | 243 MB/s     |
-| Go       | encoding/json   | 58.14 MB/s   |
-| Go       | ffjson          |              |
-| Go       | goprotobuf      | 136.50 MB/s  |
-| Go       | gogoprotobuf    | 464.36 MB/s  |
-| Go       | go-capnproto    | 2919.85 MB/s |
-| Rust     | serialize::json | 83 MB/s      |
-
-deserialization:
-
-| language | library                  | speed        |
-| -------- | ------------------------ | ------------ |
-| C++      | rapidjson                | 243 MB/s     |
-| Go       | encoding/json            | 58.14 MB/s   |
-| Go       | ffjson                   |              |
-| Go       | goprotobuf               | 136.50 MB/s  |
-| Go       | gogoprotobuf             | 464.36 MB/s  |
-| Go       | go-capnproto             | 543.28 MB/s  |
-| Go       | go-capnproto (zero-copy) | 1328.47 MB/s |
-| Rust     | serialize::json          | 20 MB/s      |
-
-
- to both to Rust and C++'s
-
-
-I've ported over Cloudflare's Go language
-[Goser](https://github.com/cloudflare/goser) to both to Rust and C++'s
-[rapidjson](https://github.com/miloyip/rapidjson)
-
- benchmark to see how we
-performed against other
-
- on a next generation generic serialization library
-[serde](https://github.com/erickt/rust-serde). It tries to clean up some of the
-ugliness and performance issues in Rust's current
-
-
-It' actually contains two approaches that I've been experimenting with.
-
-
-
-, which is my rewrite of the rust
-serialization framework. In a benchmark I ported from [Cloudflare's
-Goser](https://github.com/cloudflare/goser) benchmarks,
-
-The contenders:
-
-|language   |library          |speed                                                                            |
-|-----------|-----------------|--------------                                                                   |
-|C++        |JSON             |[rapidjson](https://github.com/miloyip/rapidjson)                                |
-|Go         |JSON             |[encoding/json](http://golang.org/pkg/encoding/json)                             |
-|Go         |JSON             |[ffjson](https://github.com/pquerna/json)                                        |
-|Go         |Protocol Buffers |[goprotobuf](http://code.google.com/p/goprotobuf/)                               |
-|Go         |Protocol Buffers |[gogoprotobuf](http://code.google.com/p/goprotobuf/)                             |
-|Go         |Cap'n Proto      |[go-capnproto](http://code.google.com/p/gogoprotobuf/)                           |
-|Rust       |JSON             |[serialize::json](http://doc.rust-lang.org/serialize/json/)                      |
-|Rust       |JSON             |[serde::json](https://github.com/erickt/rust-serde/tree/master/src/json/)        |
-|Rust       |JSON             |[serde2::json](https://github.com/erickt/rust-serde/tree/master/serde2/src/json/)|
-
-  Anyway, my main project this
-past year has been
-
-serialization:
-
-| language    | library           | speed          |
-| ----------- | ----------------- | -------------- |
-| C++         | rapidjson         | 243 MB/s       |
-| Go          | encoding/json     | 58.14 MB/s     |
-| Go          | ffjson            |                |
-| Go          | goprotobuf        | 136.50 MB/s    |
-| Go          | gogoprotobuf      | 464.36 MB/s    |
-| Go          | go-capnproto      | 2919.85 MB/s   |
-| Rust        | serialize::json   | 83 MB/s        |
-| Rust        | serde::json       | 253 MB/s       |
-| Rust        | serde2::json      | 215 MB/s       |
-| foo         | bar               | baz            |
-
-deserialization:
-
-| language  | library                  | speed        |
-|-----------|--------------------------|--------------|
-| C++       | rapidjson                | 243 MB/s     |
-| Go        | encoding/json            | 58.14 MB/s   |
-| Go        | ffjson                   |              |
-| Go        | goprotobuf               | 136.50 MB/s  |
-| Go        | gogoprotobuf             | 464.36 MB/s  |
-| Go        | go-capnproto             | 543.28 MB/s  |
-| Go        | go-capnproto (zero-copy) | 1328.47 MB/s |
-| Rust      | serialize::json          | 20 MB/s      |
-| Rust      | serde::json              | 47 MB/s      |
-| Rust      | serde2::json             | -            |
+PPS: I've gotten a number of requests for my
+[serialization benchmarks](https://github.com/erickt/rust-serialization-benchmarks)
+to be ported over to other languages and libraries. Especially a C++ version
+of Cap'n Proto. Unfortunately I don't really have the time to do it myself.
+Would anyone be up for helping to implement it?
