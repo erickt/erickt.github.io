@@ -352,7 +352,7 @@ fn test() {
         // it.
         let key = "hello";
 
-        // Lock the key. RIAA will unlock it when we exit this scope.
+        // Lock the key. RAII will unlock it when we exit this scope.
         let value = db.lock(&key, 0).unwrap();
 
         // Convert the value into a string. The lock is still live at this
