@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Serialization | Tilting at Rabbit Holes]]></title>
   <link href="http://erickt.github.io/blog/categories/serialization/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2014-12-13T18:19:51-08:00</updated>
+  <updated>2014-12-13T18:28:16-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -14,9 +14,9 @@
 
   
   <entry>
-    <title type="html"><![CDATA[Rewriting Rust Serialization, Part 3: Serde]]></title>
+    <title type="html"><![CDATA[Rewriting Rust Serialization, Part 3: Introducing Serde]]></title>
     <link href="http://erickt.github.io/blog/2014/12/13/rewriting-rust-serialization/"/>
-    <updated>2014-12-13T13:42:18-08:00</updated>
+    <updated>2014-12-13T14:40:18-08:00</updated>
     <id>http://erickt.github.io/blog/2014/12/13/rewriting-rust-serialization</id>
     <content type="html"><![CDATA[<p>There&rsquo;s been a long digression over the past month
 (<a href="http://erickt.github.io/blog/2014/11/19/adventures-in-debugging-a-potential-osx-kernel-bug/">possible kernel bugs</a>,
@@ -372,7 +372,7 @@ impl&lt;
 <p>Last is a struct deserializer. This relies on a simple state machine in order
 to deserialize from out of order maps:</p>
 
-<pre><code class="rust">struct Inner {
+<pre><code class="rust">struct Foo {
     a: (),
     b: uint,
     c: TreeMap&lt;String, Option&lt;char&gt;&gt;,
@@ -381,10 +381,10 @@ to deserialize from out of order maps:</p>
 impl&lt;
     D: Deserializer&lt;E&gt;,
     E
-&gt; Deserialize&lt;D, E&gt; for Inner {
+&gt; Deserialize&lt;D, E&gt; for Foo {
     #[inline]
-    fn deserialize_token(d: &amp;mut D, token: Token) -&gt; Result&lt;Inner, E&gt; {
-        try!(d.expect_struct_start(token, "Inner"));
+    fn deserialize_token(d: &amp;mut D, token: Token) -&gt; Result&lt;Foo, E&gt; {
+        try!(d.expect_struct_start(token, "Foo"));
 
         let mut a = None;
         let mut b = None;
@@ -407,7 +407,7 @@ impl&lt;
             }
         }
 
-        Ok(Inner { a: a.unwrap(), b: b.unwrap(), c: c.unwrap() })
+        Ok(Foo { a: a.unwrap(), b: b.unwrap(), c: c.unwrap() })
     }
 }
 </code></pre>
@@ -609,7 +609,7 @@ pub trait Serializer&lt;E&gt; {
 
 <p>And structs:</p>
 
-<pre><code class="rust">struct Inner {
+<pre><code class="rust">struct Foo {
     a: (),
     b: uint,
     c: TreeMap&lt;String, Option&lt;char&gt;&gt;,
@@ -618,9 +618,9 @@ pub trait Serializer&lt;E&gt; {
 impl&lt;
   S: Serializer&lt;E&gt;,
   E
-&gt; Serialize&lt;S, E&gt; for Inner {
+&gt; Serialize&lt;S, E&gt; for Foo {
     fn serialize(&amp;self, s: &amp;mut S) -&gt; Result&lt;(), E&gt; {
-        try!(s.serialize_struct_start("Inner", 2u));
+        try!(s.serialize_struct_start("Foo", 2u));
         try!(s.serialize_struct_elt("a", &amp;self.a));
         try!(s.serialize_struct_elt("b", &amp;self.b));
         try!(s.serialize_struct_elt("c", &amp;self.c));

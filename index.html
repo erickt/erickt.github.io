@@ -87,7 +87,7 @@ don&rsquo;t believe in magic, folks), but I &hellip;">
       
   <header>
     
-      <h1 class="entry-title"><a href="/blog/2014/12/13/rewriting-rust-serialization/">Rewriting Rust Serialization, Part 3: Serde</a></h1>
+      <h1 class="entry-title"><a href="/blog/2014/12/13/rewriting-rust-serialization/">Rewriting Rust Serialization, Part 3: Introducing Serde</a></h1>
     
     
       <p class="meta">
@@ -96,7 +96,7 @@ don&rsquo;t believe in magic, folks), but I &hellip;">
 
 
 
-<time class='entry-date' datetime='2014-12-13T13:42:18-08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>13</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>1:42 pm</span></time>
+<time class='entry-date' datetime='2014-12-13T14:40:18-08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>13</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>2:40 pm</span></time>
         
       </p>
     
@@ -774,7 +774,7 @@ to deserialize from out of order maps:</p>
 <span class='line-number'>36</span>
 <span class='line-number'>37</span>
 <span class='line-number'>38</span>
-</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">struct</span> <span class="n">Inner</span> <span class="p">{</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">struct</span> <span class="n">Foo</span> <span class="p">{</span>
 </span><span class='line'>    <span class="n">a</span><span class="o">:</span> <span class="p">(),</span>
 </span><span class='line'>    <span class="n">b</span><span class="o">:</span> <span class="kt">uint</span><span class="p">,</span>
 </span><span class='line'>    <span class="n">c</span><span class="o">:</span> <span class="n">TreeMap</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span> <span class="nb">Option</span><span class="o">&lt;</span><span class="n">char</span><span class="o">&gt;&gt;</span><span class="p">,</span>
@@ -783,10 +783,10 @@ to deserialize from out of order maps:</p>
 </span><span class='line'><span class="k">impl</span><span class="o">&lt;</span>
 </span><span class='line'>    <span class="n">D</span><span class="o">:</span> <span class="n">Deserializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span>
 </span><span class='line'>    <span class="n">E</span>
-</span><span class='line'><span class="o">&gt;</span> <span class="n">Deserialize</span><span class="o">&lt;</span><span class="n">D</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">Inner</span> <span class="p">{</span>
+</span><span class='line'><span class="o">&gt;</span> <span class="n">Deserialize</span><span class="o">&lt;</span><span class="n">D</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">Foo</span> <span class="p">{</span>
 </span><span class='line'>    <span class="cp">#[inline]</span>
-</span><span class='line'>    <span class="k">fn</span> <span class="n">deserialize_token</span><span class="p">(</span><span class="n">d</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">D</span><span class="p">,</span> <span class="n">token</span><span class="o">:</span> <span class="n">Token</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Inner</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">d</span><span class="p">.</span><span class="n">expect_struct_start</span><span class="p">(</span><span class="n">token</span><span class="p">,</span> <span class="s">&quot;Inner&quot;</span><span class="p">));</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">deserialize_token</span><span class="p">(</span><span class="n">d</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">D</span><span class="p">,</span> <span class="n">token</span><span class="o">:</span> <span class="n">Token</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Foo</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">d</span><span class="p">.</span><span class="n">expect_struct_start</span><span class="p">(</span><span class="n">token</span><span class="p">,</span> <span class="s">&quot;Foo&quot;</span><span class="p">));</span>
 </span><span class='line'>
 </span><span class='line'>        <span class="kd">let</span> <span class="k">mut</span> <span class="n">a</span> <span class="o">=</span> <span class="nb">None</span><span class="p">;</span>
 </span><span class='line'>        <span class="kd">let</span> <span class="k">mut</span> <span class="n">b</span> <span class="o">=</span> <span class="nb">None</span><span class="p">;</span>
@@ -809,7 +809,7 @@ to deserialize from out of order maps:</p>
 </span><span class='line'>            <span class="p">}</span>
 </span><span class='line'>        <span class="p">}</span>
 </span><span class='line'>
-</span><span class='line'>        <span class="nb">Ok</span><span class="p">(</span><span class="n">Inner</span> <span class="p">{</span> <span class="n">a</span><span class="o">:</span> <span class="n">a</span><span class="p">.</span><span class="n">unwrap</span><span class="p">(),</span> <span class="n">b</span><span class="o">:</span> <span class="n">b</span><span class="p">.</span><span class="n">unwrap</span><span class="p">(),</span> <span class="n">c</span><span class="o">:</span> <span class="n">c</span><span class="p">.</span><span class="n">unwrap</span><span class="p">()</span> <span class="p">})</span>
+</span><span class='line'>        <span class="nb">Ok</span><span class="p">(</span><span class="n">Foo</span> <span class="p">{</span> <span class="n">a</span><span class="o">:</span> <span class="n">a</span><span class="p">.</span><span class="n">unwrap</span><span class="p">(),</span> <span class="n">b</span><span class="o">:</span> <span class="n">b</span><span class="p">.</span><span class="n">unwrap</span><span class="p">(),</span> <span class="n">c</span><span class="o">:</span> <span class="n">c</span><span class="p">.</span><span class="n">unwrap</span><span class="p">()</span> <span class="p">})</span>
 </span><span class='line'>    <span class="p">}</span>
 </span><span class='line'><span class="p">}</span>
 </span></code></pre></td></tr></table></div></figure>
@@ -1202,7 +1202,7 @@ properly:</p>
 <span class='line-number'>16</span>
 <span class='line-number'>17</span>
 <span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">struct</span> <span class="n">Inner</span> <span class="p">{</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">struct</span> <span class="n">Foo</span> <span class="p">{</span>
 </span><span class='line'>    <span class="n">a</span><span class="o">:</span> <span class="p">(),</span>
 </span><span class='line'>    <span class="n">b</span><span class="o">:</span> <span class="kt">uint</span><span class="p">,</span>
 </span><span class='line'>    <span class="n">c</span><span class="o">:</span> <span class="n">TreeMap</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span> <span class="nb">Option</span><span class="o">&lt;</span><span class="n">char</span><span class="o">&gt;&gt;</span><span class="p">,</span>
@@ -1211,9 +1211,9 @@ properly:</p>
 </span><span class='line'><span class="k">impl</span><span class="o">&lt;</span>
 </span><span class='line'>  <span class="n">S</span><span class="o">:</span> <span class="n">Serializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span>
 </span><span class='line'>  <span class="n">E</span>
-</span><span class='line'><span class="o">&gt;</span> <span class="n">Serialize</span><span class="o">&lt;</span><span class="n">S</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">Inner</span> <span class="p">{</span>
+</span><span class='line'><span class="o">&gt;</span> <span class="n">Serialize</span><span class="o">&lt;</span><span class="n">S</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">Foo</span> <span class="p">{</span>
 </span><span class='line'>    <span class="k">fn</span> <span class="n">serialize</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span> <span class="n">s</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">S</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">serialize_struct_start</span><span class="p">(</span><span class="s">&quot;Inner&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="k">u</span><span class="p">));</span>
+</span><span class='line'>        <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">serialize_struct_start</span><span class="p">(</span><span class="s">&quot;Foo&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="k">u</span><span class="p">));</span>
 </span><span class='line'>        <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">serialize_struct_elt</span><span class="p">(</span><span class="s">&quot;a&quot;</span><span class="p">,</span> <span class="o">&amp;</span><span class="bp">self</span><span class="p">.</span><span class="n">a</span><span class="p">));</span>
 </span><span class='line'>        <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">serialize_struct_elt</span><span class="p">(</span><span class="s">&quot;b&quot;</span><span class="p">,</span> <span class="o">&amp;</span><span class="bp">self</span><span class="p">.</span><span class="n">b</span><span class="p">));</span>
 </span><span class='line'>        <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">serialize_struct_elt</span><span class="p">(</span><span class="s">&quot;c&quot;</span><span class="p">,</span> <span class="o">&amp;</span><span class="bp">self</span><span class="p">.</span><span class="n">c</span><span class="p">));</span>
@@ -5913,7 +5913,7 @@ complete example.</p>
   <ul id="recent_posts">
     
       <li class="post">
-        <a href="/blog/2014/12/13/rewriting-rust-serialization/">Rewriting Rust Serialization, Part 3: Serde</a>
+        <a href="/blog/2014/12/13/rewriting-rust-serialization/">Rewriting Rust Serialization, Part 3: Introducing Serde</a>
       </li>
     
       <li class="post">
