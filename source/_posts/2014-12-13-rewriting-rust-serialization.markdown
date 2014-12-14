@@ -697,3 +697,5 @@ PPS: I've gotten a number of requests for my
 to be ported over to other languages and libraries. Especially a C++ version
 of Cap'n Proto. Unfortunately I don't really have the time to do it myself.
 Would anyone be up for helping to implement it?
+
+comments on [reddit](https://www.reddit.com/r/rust/comments/2p85za/rewriting_rust_serialization_part_3_introducing/)
