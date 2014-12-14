@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Rust | Tilting at Rabbit Holes]]></title>
   <link href="http://erickt.github.io/blog/categories/rust/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2014-12-13T18:28:16-08:00</updated>
+  <updated>2014-12-14T10:34:06-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -856,6 +856,8 @@ range. Anyone want to help optimize
 to be ported over to other languages and libraries. Especially a C++ version
 of Cap&#8217;n Proto. Unfortunately I don&rsquo;t really have the time to do it myself.
 Would anyone be up for helping to implement it?</p>
+
+<p>comments on <a href="https://www.reddit.com/r/rust/comments/2p85za/rewriting_rust_serialization_part_3_introducing/">reddit</a></p>
 ]]></content>
   </entry>
   
@@ -1197,7 +1199,7 @@ fn test() {
         // it.
         let key = "hello";
 
-        // Lock the key. RIAA will unlock it when we exit this scope.
+        // Lock the key. RAII will unlock it when we exit this scope.
         let value = db.lock(&amp;key, 0).unwrap();
 
         // Convert the value into a string. The lock is still live at this

@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Mdbm | Tilting at Rabbit Holes]]></title>
   <link href="http://erickt.github.io/blog/categories/mdbm/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2014-12-13T18:28:16-08:00</updated>
+  <updated>2014-12-14T10:34:06-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -351,7 +351,7 @@ fn test() {
         // it.
         let key = "hello";
 
-        // Lock the key. RIAA will unlock it when we exit this scope.
+        // Lock the key. RAII will unlock it when we exit this scope.
         let value = db.lock(&amp;key, 0).unwrap();
 
         // Convert the value into a string. The lock is still live at this

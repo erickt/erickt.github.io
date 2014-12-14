@@ -667,7 +667,7 @@ the <code>Lock</code> to the lifetime of the returned <code>&amp;[u8]</code>:</p
 </span><span class='line'>        <span class="c1">// it.</span>
 </span><span class='line'>        <span class="kd">let</span> <span class="n">key</span> <span class="o">=</span> <span class="s">&quot;hello&quot;</span><span class="p">;</span>
 </span><span class='line'>
-</span><span class='line'>        <span class="c1">// Lock the key. RIAA will unlock it when we exit this scope.</span>
+</span><span class='line'>        <span class="c1">// Lock the key. RAII will unlock it when we exit this scope.</span>
 </span><span class='line'>        <span class="kd">let</span> <span class="n">value</span> <span class="o">=</span> <span class="n">db</span><span class="p">.</span><span class="n">lock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">key</span><span class="p">,</span> <span class="mi">0</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span>
 </span><span class='line'>
 </span><span class='line'>        <span class="c1">// Convert the value into a string. The lock is still live at this</span>
