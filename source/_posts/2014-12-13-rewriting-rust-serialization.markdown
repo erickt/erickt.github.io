@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Rewriting Rust Serialization, Part 3: Serde"
+title: "Rewriting Rust Serialization, Part 3: Introducing serde"
 date: 2014-12-13 14:40:18 -0800
 comments: true
 categories: [rust, serialization]
