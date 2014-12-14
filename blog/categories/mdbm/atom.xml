@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Mdbm | Tilting at Rabbit Holes]]></title>
   <link href="http://erickt.github.io/blog/categories/mdbm/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2014-12-13T11:10:24-08:00</updated>
+  <updated>2014-12-13T18:19:51-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -63,7 +63,7 @@ implemented).</p>
 <p>By convention, we put bindgen packages into <code>$name-sys</code>, so make that crate as
 well:</p>
 
-<pre><code>% crate new --no-git mdbm-sys
+<pre><code>% cargo new --no-git mdbm-sys
 % cd mdbm-sys
 </code></pre>
 

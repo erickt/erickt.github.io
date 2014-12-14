@@ -4,7 +4,7 @@
   <title><![CDATA[Tilting at Rabbit Holes]]></title>
   <link href="http://erickt.github.io/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2014-12-13T11:10:24-08:00</updated>
+  <updated>2014-12-13T18:19:51-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -12,6 +12,1361 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Rewriting Rust Serialization, Part 3: Serde]]></title>
+    <link href="http://erickt.github.io/blog/2014/12/13/rewriting-rust-serialization/"/>
+    <updated>2014-12-13T13:42:18-08:00</updated>
+    <id>http://erickt.github.io/blog/2014/12/13/rewriting-rust-serialization</id>
+    <content type="html"><![CDATA[<p>There&rsquo;s been a long digression over the past month
+(<a href="http://erickt.github.io/blog/2014/11/19/adventures-in-debugging-a-potential-osx-kernel-bug/">possible kernel bugs</a>,
+<a href="http://erickt.github.io/blog/2014/11/22/benchmarking-is-confusing/">benchmarking Writers</a>,
+and
+<a href="https://github.com/rust-lang/rust/pull/19574">don&rsquo;t believe in magic, folks</a>), but I&rsquo;m back
+into serialization. Woo! Here&rsquo;s
+<a href="http://erickt.github.io/blog/2014/10/28/serialization/">part 1</a> and
+<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2</a>), Rust&rsquo;s
+<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2.1</a>), Rust&rsquo;s
+<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2.2</a>) if you need
+to catch up.</p>
+
+<p>So <code>libserialize</code> has some pretty serious downsides. It&rsquo;s slow, it&rsquo;s got this
+weird recursive closure thing going on, and it can&rsquo;t even represent enum types
+like a <code>serialize::json::Json</code>. We need a new solution, and while I was at it,
+we ended up with two: <a href="https://github.com/erickt/rust-serde">serde</a> and
+<a href="https://github.com/erickt/rust-serde/tree/master/serde2">serde2</a>. Both are
+different approaches to trying to address these problems. The biggest one being
+the type representation problem.</p>
+
+<h2>Serde Version 1</h2>
+
+<h3>Deserialization</h3>
+
+<p>I want to start with deserialization first, as that&rsquo;s really the interesting
+bit. To repeat myself a little bit from
+<a href="https://erickt.github.io/blog/2014/10/28/serialization/">part 1</a>,
+here is a generic json <code>Value</code> enum:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">enum</span> <span class="n">Value</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">I64</span><span class="p">(</span><span class="kt">i64</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">U64</span><span class="p">(</span><span class="kt">u64</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">F64</span><span class="p">(</span><span class="kt">f64</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">String</span><span class="p">(</span><span class="n">String</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">Boolean</span><span class="p">(</span><span class="kt">bool</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">Array</span><span class="p">(</span><span class="n">Vec</span><span class="o">&lt;</span><span class="n">Value</span><span class="o">&gt;</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">Object</span><span class="p">(</span><span class="n">TreeMap</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span> <span class="n">Value</span><span class="o">&gt;</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">Null</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>To deserialize a string like <code>[1, true]</code> into
+<code>Array(vec![I64(1), Boolean(true)])</code>, we need to peek at one character ahead
+(ignoring whitespace) in order to discover what is the type of the next value.
+We then can use that knowledge to pick the right variant, and parse the next
+value correctly. While I haven&rsquo;t formally studied this stuff, I believe this
+can be more formally stated as <code>Value</code> requires at least a LL(1) grammar,
+but since <code>libserialize</code> supports no lookahead, so at most it can handle LL(0)
+grammars.</p>
+
+<p>Since I was thinking of this problem in terms of grammars, I wanted to take a
+page out of their book and implement generic deserialization in this style.
+<code>serde::de::Deserializer</code>s are then an <code>Iterator&lt;serde::de::Token&gt;</code> lexer that
+produces a token stream, and <code>serde::de::Deserialize</code>s are a parser that
+consumes this stream to produce a value. Here&rsquo;s <code>serde::de::Token</code>, which can
+represent nearly all the rust types:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">enum</span> <span class="n">Token</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">Null</span><span class="p">,</span>
+</span><span class='line'>    <span class="nb">Bool</span><span class="p">(</span><span class="kt">bool</span><span class="p">),</span>
+</span><span class='line'>    <span class="nb">Int</span><span class="p">(</span><span class="kt">int</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">I8</span><span class="p">(</span><span class="kt">i8</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">I16</span><span class="p">(</span><span class="kt">i16</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">I32</span><span class="p">(</span><span class="kt">i32</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">I64</span><span class="p">(</span><span class="kt">i64</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">Uint</span><span class="p">(</span><span class="kt">uint</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">U8</span><span class="p">(</span><span class="kt">u8</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">U16</span><span class="p">(</span><span class="kt">u16</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">U32</span><span class="p">(</span><span class="kt">u32</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">U64</span><span class="p">(</span><span class="kt">u64</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">F32</span><span class="p">(</span><span class="kt">f32</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">F64</span><span class="p">(</span><span class="kt">f64</span><span class="p">),</span>
+</span><span class='line'>    <span class="nb">Char</span><span class="p">(</span><span class="n">char</span><span class="p">),</span>
+</span><span class='line'>    <span class="nb">Str</span><span class="p">(</span><span class="o">&amp;</span><span class="n">&#39;static</span> <span class="kt">str</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">String</span><span class="p">(</span><span class="n">String</span><span class="p">),</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="nb">Option</span><span class="p">(</span><span class="kt">bool</span><span class="p">),</span>     <span class="c1">// true if the option has a value</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">TupleStart</span><span class="p">(</span><span class="kt">uint</span><span class="p">),</span> <span class="c1">// estimate of the number of values</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">StructStart</span><span class="p">(</span>
+</span><span class='line'>        <span class="o">&amp;</span><span class="n">&#39;static</span> <span class="kt">str</span><span class="p">,</span> <span class="c1">// the struct name</span>
+</span><span class='line'>        <span class="kt">uint</span><span class="p">,</span>         <span class="c1">// estimate of the number of (string, value) pairs</span>
+</span><span class='line'>    <span class="p">),</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">EnumStart</span><span class="p">(</span>
+</span><span class='line'>        <span class="o">&amp;</span><span class="n">&#39;static</span> <span class="kt">str</span><span class="p">,</span> <span class="c1">// the enum name</span>
+</span><span class='line'>        <span class="o">&amp;</span><span class="n">&#39;static</span> <span class="kt">str</span><span class="p">,</span> <span class="c1">// the variant name</span>
+</span><span class='line'>        <span class="kt">uint</span>          <span class="c1">// estimate of the number of values</span>
+</span><span class='line'>    <span class="p">),</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">SeqStart</span><span class="p">(</span><span class="kt">uint</span><span class="p">),</span> <span class="c1">// number of values</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">MapStart</span><span class="p">(</span><span class="kt">uint</span><span class="p">),</span> <span class="c1">// number of (value, value) pairs</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">End</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>serde::de::Deserialize</code> stream must generate tokens that follow this
+grammar:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+</pre></td><td class='code'><pre><code class='antlr'><span class='line'><span class="nl">value</span><span class="w"> </span><span class="p">::</span><span class="o">=</span><span class="w"> </span><span class="no">Null</span><span class="w"></span>
+</span><span class='line'><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="no">Bool</span><span class="w"></span>
+</span><span class='line'><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="no">Int</span><span class="w"></span>
+</span><span class='line'><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="o">...</span><span class="w"></span>
+</span><span class='line'><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="nv">option</span><span class="w"></span>
+</span><span class='line'><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="nv">tuple</span><span class="w"></span>
+</span><span class='line'><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="nv">struct</span><span class="w"></span>
+</span><span class='line'><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="nv">enum</span><span class="w"></span>
+</span><span class='line'><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="nv">sequence</span><span class="w"></span>
+</span><span class='line'><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="nv">map</span><span class="w"></span>
+</span><span class='line'><span class="w">        </span><span class="p">;</span><span class="w"></span>
+</span><span class='line'>
+</span><span class='line'><span class="nl">option</span><span class="w"> </span><span class="p">::</span><span class="o">=</span><span class="w"> </span><span class="no">Option</span><span class="w"> </span><span class="nv">value</span><span class="w"></span>
+</span><span class='line'><span class="w">         </span><span class="o">|</span><span class="w"> </span><span class="no">Option</span><span class="w"></span>
+</span><span class='line'><span class="w">         </span><span class="p">;</span><span class="w"></span>
+</span><span class='line'>
+</span><span class='line'><span class="nl">tuple</span><span class="w"> </span><span class="p">:</span><span class="o">=</span><span class="w"> </span><span class="no">TupleStart</span><span class="w"> </span><span class="nv">value</span><span class="o">*</span><span class="w"> </span><span class="no">End</span><span class="p">;</span><span class="w"></span>
+</span><span class='line'>
+</span><span class='line'><span class="nl">struct</span><span class="w"> </span><span class="p">:</span><span class="o">=</span><span class="w"> </span><span class="no">StructStart</span><span class="w"> </span><span class="o">(</span><span class="no">Str</span><span class="w"> </span><span class="nv">value</span><span class="o">)*</span><span class="w"> </span><span class="no">End</span><span class="p">;</span><span class="w"></span>
+</span><span class='line'>
+</span><span class='line'><span class="nl">enum</span><span class="w"> </span><span class="p">:</span><span class="o">=</span><span class="w"> </span><span class="no">EnumStart</span><span class="w"> </span><span class="nv">value</span><span class="o">*</span><span class="w"> </span><span class="no">End</span><span class="p">;</span><span class="w"></span>
+</span><span class='line'>
+</span><span class='line'><span class="nl">sequence</span><span class="w"> </span><span class="p">:</span><span class="o">=</span><span class="w"> </span><span class="no">SeqStart</span><span class="w"> </span><span class="nv">value</span><span class="o">*</span><span class="w"> </span><span class="no">End</span><span class="p">;</span><span class="w"></span>
+</span><span class='line'>
+</span><span class='line'><span class="nl">map</span><span class="w"> </span><span class="p">:</span><span class="o">=</span><span class="w"> </span><span class="no">MapStart</span><span class="w"> </span><span class="o">(</span><span class="nv">value</span><span class="w"> </span><span class="nv">value</span><span class="o">)*</span><span class="w"> </span><span class="no">End</span><span class="p">;</span><span class="w"></span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>For performance reasons, there is no separator in the compound grammar.</p>
+
+<p>Finishing up this section are the actual traits, <code>Deserialize</code> and <code>Deserializer</code>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">Deserialize</span><span class="o">&lt;</span><span class="n">D</span><span class="o">:</span> <span class="n">Deserializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">deserialize</span><span class="p">(</span><span class="n">d</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">D</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Self</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">token</span> <span class="o">=</span> <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">d</span><span class="p">.</span><span class="n">expect_token</span><span class="p">());</span>
+</span><span class='line'>        <span class="n">Deserialize</span><span class="o">::</span><span class="n">deserialize_token</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">token</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">deserialize_token</span><span class="p">(</span><span class="n">d</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">D</span><span class="p">,</span> <span class="n">token</span><span class="o">:</span> <span class="n">Token</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Self</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">Deserializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;:</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="nb">Result</span><span class="o">&lt;</span><span class="n">Token</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="c-Doc">/// Called when a `Deserialize` expected more tokens, but the</span>
+</span><span class='line'>    <span class="c-Doc">/// `Deserializer` was empty.</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">end_of_stream_error</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">E</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c-Doc">/// Called when a `Deserializer` was unable to properly parse the stream.</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">syntax_error</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="o">:</span> <span class="n">Token</span><span class="p">,</span> <span class="n">expected</span><span class="o">:</span> <span class="o">&amp;</span><span class="n">&#39;static</span> <span class="p">[</span><span class="n">TokenKind</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">E</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c-Doc">/// Called when a named structure or enum got a name that it didn&#39;t expect.</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">unexpected_name_error</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="o">:</span> <span class="n">Token</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">E</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c-Doc">/// Called when a value was unable to be coerced into another value.</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">conversion_error</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="o">:</span> <span class="n">Token</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">E</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c-Doc">/// Called when a `Deserialize` structure did not deserialize a field</span>
+</span><span class='line'>    <span class="c-Doc">/// named `field`.</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">missing_field</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">T</span><span class="o">:</span> <span class="n">Deserialize</span><span class="o">&lt;</span><span class="n">Self</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="o">:</span> <span class="o">&amp;</span><span class="n">&#39;static</span> <span class="kt">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">T</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c-Doc">/// Called when a `Deserialize` has decided to not consume this token.</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">ignore_field</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">_token</span><span class="o">:</span> <span class="n">Token</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">_</span><span class="o">:</span> <span class="n">IgnoreTokens</span> <span class="o">=</span> <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">Deserialize</span><span class="o">::</span><span class="n">deserialize</span><span class="p">(</span><span class="bp">self</span><span class="p">));</span>
+</span><span class='line'>        <span class="nb">Ok</span><span class="p">(())</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">expect_token</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Token</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">match</span> <span class="bp">self</span><span class="p">.</span><span class="n">next</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nb">Some</span><span class="p">(</span><span class="nb">Ok</span><span class="p">(</span><span class="n">token</span><span class="p">))</span> <span class="o">=&gt;</span> <span class="nb">Ok</span><span class="p">(</span><span class="n">token</span><span class="p">),</span>
+</span><span class='line'>            <span class="nb">Some</span><span class="p">(</span><span class="nb">Err</span><span class="p">(</span><span class="n">err</span><span class="p">))</span> <span class="o">=&gt;</span> <span class="nb">Err</span><span class="p">(</span><span class="n">err</span><span class="p">),</span>
+</span><span class='line'>            <span class="nb">None</span> <span class="o">=&gt;</span> <span class="nb">Err</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">end_of_stream_error</span><span class="p">()),</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="p">...</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>Deserialize</code> trait is kept pretty slim, and is how lookahead is
+implemented. <code>Deserializer</code> is an enhanced <code>Iterator&lt;Result&lt;Token, E&gt;&gt;</code>, with
+many helpful default methods. Here are them in action. First we&rsquo;ll start with
+what&rsquo;s probably the simplest <code>Deserializer</code>, which just wraps a <code>Vec&lt;Token&gt;</code>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">enum</span> <span class="n">Error</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">EndOfStream</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">SyntaxError</span><span class="p">(</span><span class="n">Vec</span><span class="o">&lt;</span><span class="n">TokenKind</span><span class="o">&gt;</span><span class="p">),</span>
+</span><span class='line'>    <span class="n">UnexpectedName</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">ConversionError</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">MissingField</span><span class="p">(</span><span class="o">&amp;</span><span class="n">&#39;static</span> <span class="kt">str</span><span class="p">),</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">struct</span> <span class="n">TokenDeserializer</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">tokens</span><span class="o">:</span> <span class="n">Iter</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">:</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="n">Token</span><span class="o">&gt;&gt;</span> <span class="n">TokenDeserializer</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">new</span><span class="p">(</span><span class="n">tokens</span><span class="o">:</span> <span class="n">Iter</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TokenDeserializer</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">TokenDeserializer</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">tokens</span><span class="o">:</span> <span class="n">tokens</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">:</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="n">Token</span><span class="o">&gt;&gt;</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="nb">Result</span><span class="o">&lt;</span><span class="n">Token</span><span class="p">,</span> <span class="n">Error</span><span class="o">&gt;&gt;</span> <span class="k">for</span> <span class="n">TokenDeserializer</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">next</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">option</span><span class="o">::</span><span class="nb">Option</span><span class="o">&lt;</span><span class="nb">Result</span><span class="o">&lt;</span><span class="n">Token</span><span class="p">,</span> <span class="n">Error</span><span class="o">&gt;&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">match</span> <span class="bp">self</span><span class="p">.</span><span class="n">tokens</span><span class="p">.</span><span class="n">next</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nb">None</span> <span class="o">=&gt;</span> <span class="nb">None</span><span class="p">,</span>
+</span><span class='line'>            <span class="nb">Some</span><span class="p">(</span><span class="n">token</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="nb">Some</span><span class="p">(</span><span class="nb">Ok</span><span class="p">(</span><span class="n">token</span><span class="p">)),</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">:</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="n">Token</span><span class="o">&gt;&gt;</span> <span class="n">Deserializer</span><span class="o">&lt;</span><span class="n">Error</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">TokenDeserializer</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">end_of_stream_error</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Error</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">Error</span><span class="o">::</span><span class="n">EndOfStream</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">syntax_error</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">_token</span><span class="o">:</span> <span class="n">Token</span><span class="p">,</span> <span class="n">expected</span><span class="o">:</span> <span class="o">&amp;</span><span class="p">[</span><span class="n">TokenKind</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Error</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">Error</span><span class="o">::</span><span class="n">SyntaxError</span><span class="p">(</span><span class="n">expected</span><span class="p">.</span><span class="n">to_vec</span><span class="p">())</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">unexpected_name_error</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">_token</span><span class="o">:</span> <span class="n">Token</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Error</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">Error</span><span class="o">::</span><span class="n">UnexpectedName</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">conversion_error</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">_token</span><span class="o">:</span> <span class="n">Token</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Error</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">Error</span><span class="o">::</span><span class="n">ConversionError</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">missing_field</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">T</span><span class="o">:</span> <span class="n">Deserialize</span><span class="o">&lt;</span><span class="n">TokenDeserializer</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">Error</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="o">:</span> <span class="o">&amp;</span><span class="n">&#39;static</span> <span class="kt">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">T</span><span class="p">,</span> <span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="nb">Err</span><span class="p">(</span><span class="n">Error</span><span class="o">::</span><span class="n">MissingField</span><span class="p">(</span><span class="n">field</span><span class="p">))</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Overall it should be pretty straight forward. As usual, error handling makes
+things a bit noisier, but hopefully it&rsquo;s not too onerous. Next is a
+<code>Deserialize</code> for <code>bool</code>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="n">D</span><span class="o">:</span> <span class="n">Deserializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="n">Deserialize</span><span class="o">&lt;</span><span class="n">D</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="k">for</span> <span class="kt">bool</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">deserialize_token</span><span class="p">(</span><span class="n">d</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">D</span><span class="p">,</span> <span class="n">token</span><span class="o">:</span> <span class="n">Token</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="kt">bool</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">d</span><span class="p">.</span><span class="n">expect_bool</span><span class="p">(</span><span class="n">token</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">Deserializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;:</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="nb">Result</span><span class="o">&lt;</span><span class="n">Token</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="p">...</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">expect_bool</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="o">:</span> <span class="n">Token</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="kt">bool</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">match</span> <span class="n">token</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">Token</span><span class="o">::</span><span class="nb">Bool</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="nb">Ok</span><span class="p">(</span><span class="n">value</span><span class="p">),</span>
+</span><span class='line'>            <span class="n">token</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="k">static</span> <span class="n">EXPECTED_TOKENS</span><span class="o">:</span> <span class="o">&amp;</span><span class="n">&#39;static</span> <span class="p">[</span><span class="n">TokenKind</span><span class="p">]</span> <span class="o">=</span> <span class="o">&amp;</span><span class="p">[</span>
+</span><span class='line'>                    <span class="n">TokenKind</span><span class="o">::</span><span class="n">BoolKind</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">];</span>
+</span><span class='line'>                <span class="nb">Err</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">syntax_error</span><span class="p">(</span><span class="n">token</span><span class="p">,</span> <span class="n">EXPECTED_TOKENS</span><span class="p">))</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>    <span class="p">...</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Simple! Sequences are a bit more tricky. Here&rsquo;s <code>Deserialize</code> a <code>Vec&lt;T&gt;</code>. We
+use a helper adaptor <code>SeqDeserializer</code> to deserialize from all types that
+implement <code>FromIterator</code>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">impl</span><span class="o">&lt;</span>
+</span><span class='line'>    <span class="n">D</span><span class="o">:</span> <span class="n">Deserializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">E</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">T</span><span class="o">:</span> <span class="n">Deserialize</span><span class="o">&lt;</span><span class="n">D</span> <span class="p">,</span><span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'><span class="o">&gt;</span> <span class="n">Deserialize</span><span class="o">&lt;</span><span class="n">D</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">Vec</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">deserialize_token</span><span class="p">(</span><span class="n">d</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">D</span><span class="p">,</span> <span class="n">token</span><span class="o">:</span> <span class="n">Token</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Vec</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">d</span><span class="p">.</span><span class="n">expect_seq</span><span class="p">(</span><span class="n">token</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">Deserializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;:</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="nb">Result</span><span class="o">&lt;</span><span class="n">Token</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="p">...</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">expect_seq</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">T</span><span class="o">:</span> <span class="n">Deserialize</span><span class="o">&lt;</span><span class="n">Self</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">,</span>
+</span><span class='line'>        <span class="n">C</span><span class="o">:</span> <span class="nb">FromIterator</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="o">:</span> <span class="n">Token</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">C</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">len</span> <span class="o">=</span> <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">expect_seq_start</span><span class="p">(</span><span class="n">token</span><span class="p">));</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="k">mut</span> <span class="n">err</span> <span class="o">=</span> <span class="nb">None</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">collection</span><span class="o">:</span> <span class="n">C</span> <span class="o">=</span> <span class="p">{</span>
+</span><span class='line'>            <span class="kd">let</span> <span class="n">d</span> <span class="o">=</span> <span class="n">SeqDeserializer</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">d</span><span class="o">:</span> <span class="bp">self</span><span class="p">,</span>
+</span><span class='line'>                <span class="n">len</span><span class="o">:</span> <span class="n">len</span><span class="p">,</span>
+</span><span class='line'>                <span class="n">err</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">err</span><span class="p">,</span>
+</span><span class='line'>            <span class="p">};</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="n">d</span><span class="p">.</span><span class="n">collect</span><span class="p">()</span>
+</span><span class='line'>        <span class="p">};</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">match</span> <span class="n">err</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nb">Some</span><span class="p">(</span><span class="n">err</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="nb">Err</span><span class="p">(</span><span class="n">err</span><span class="p">),</span>
+</span><span class='line'>            <span class="nb">None</span> <span class="o">=&gt;</span> <span class="nb">Ok</span><span class="p">(</span><span class="n">collection</span><span class="p">),</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="p">...</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">struct</span> <span class="n">SeqDeserializer</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="p">,</span> <span class="n">D</span><span class="o">:</span> <span class="nl">&#39;a</span><span class="p">,</span> <span class="n">E</span><span class="o">:</span> <span class="nl">&#39;a</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">d</span><span class="o">:</span> <span class="o">&amp;</span><span class="n">&#39;a</span> <span class="k">mut</span> <span class="n">D</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">len</span><span class="o">:</span> <span class="kt">uint</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">err</span><span class="o">:</span> <span class="o">&amp;</span><span class="n">&#39;a</span> <span class="k">mut</span> <span class="nb">Option</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span><span class="o">&lt;</span>
+</span><span class='line'>    <span class="nl">&#39;a</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">D</span><span class="o">:</span> <span class="n">Deserializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">E</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">T</span><span class="o">:</span> <span class="n">Deserialize</span><span class="o">&lt;</span><span class="n">D</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'><span class="o">&gt;</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">SeqDeserializer</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="p">,</span> <span class="n">D</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">next</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">option</span><span class="o">::</span><span class="nb">Option</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">match</span> <span class="bp">self</span><span class="p">.</span><span class="n">d</span><span class="p">.</span><span class="n">expect_seq_elt_or_end</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nb">Ok</span><span class="p">(</span><span class="n">next</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="bp">self</span><span class="p">.</span><span class="n">len</span> <span class="o">-=</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>                <span class="n">next</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>            <span class="nb">Err</span><span class="p">(</span><span class="n">err</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="o">*</span><span class="bp">self</span><span class="p">.</span><span class="n">err</span> <span class="o">=</span> <span class="nb">Some</span><span class="p">(</span><span class="n">err</span><span class="p">);</span>
+</span><span class='line'>                <span class="nb">None</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">size_hint</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">(</span><span class="kt">uint</span><span class="p">,</span> <span class="n">option</span><span class="o">::</span><span class="nb">Option</span><span class="o">&lt;</span><span class="kt">uint</span><span class="o">&gt;</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>        <span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">len</span><span class="p">,</span> <span class="nb">Some</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">len</span><span class="p">))</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Last is a struct deserializer. This relies on a simple state machine in order
+to deserialize from out of order maps:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">struct</span> <span class="n">Inner</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">a</span><span class="o">:</span> <span class="p">(),</span>
+</span><span class='line'>    <span class="n">b</span><span class="o">:</span> <span class="kt">uint</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">c</span><span class="o">:</span> <span class="n">TreeMap</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span> <span class="nb">Option</span><span class="o">&lt;</span><span class="n">char</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span><span class="o">&lt;</span>
+</span><span class='line'>    <span class="n">D</span><span class="o">:</span> <span class="n">Deserializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">E</span>
+</span><span class='line'><span class="o">&gt;</span> <span class="n">Deserialize</span><span class="o">&lt;</span><span class="n">D</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">Inner</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">deserialize_token</span><span class="p">(</span><span class="n">d</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">D</span><span class="p">,</span> <span class="n">token</span><span class="o">:</span> <span class="n">Token</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Inner</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">d</span><span class="p">.</span><span class="n">expect_struct_start</span><span class="p">(</span><span class="n">token</span><span class="p">,</span> <span class="s">&quot;Inner&quot;</span><span class="p">));</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="k">mut</span> <span class="n">a</span> <span class="o">=</span> <span class="nb">None</span><span class="p">;</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="k">mut</span> <span class="n">b</span> <span class="o">=</span> <span class="nb">None</span><span class="p">;</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="k">mut</span> <span class="n">c</span> <span class="o">=</span> <span class="nb">None</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">static</span> <span class="n">FIELDS</span><span class="o">:</span> <span class="o">&amp;</span><span class="n">&#39;static</span> <span class="p">[</span><span class="o">&amp;</span><span class="n">&#39;static</span> <span class="kt">str</span><span class="p">]</span> <span class="o">=</span> <span class="o">&amp;</span><span class="p">[</span><span class="s">&quot;a&quot;</span><span class="p">,</span> <span class="s">&quot;b&quot;</span><span class="p">,</span> <span class="s">&quot;c&quot;</span><span class="p">];</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">loop</span> <span class="p">{</span>
+</span><span class='line'>            <span class="kd">let</span> <span class="n">idx</span> <span class="o">=</span> <span class="k">match</span> <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">d</span><span class="p">.</span><span class="n">expect_struct_field_or_end</span><span class="p">(</span><span class="n">FIELDS</span><span class="p">))</span> <span class="p">{</span>
+</span><span class='line'>                <span class="nb">Some</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="n">idx</span><span class="p">,</span>
+</span><span class='line'>                <span class="nb">None</span> <span class="o">=&gt;</span> <span class="p">{</span> <span class="k">break</span><span class="p">;</span> <span class="p">}</span>
+</span><span class='line'>            <span class="p">};</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="k">match</span> <span class="n">idx</span> <span class="p">{</span>
+</span><span class='line'>                <span class="nb">Some</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span> <span class="n">a</span> <span class="o">=</span> <span class="nb">Some</span><span class="p">(</span><span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">d</span><span class="p">.</span><span class="n">expect_struct_value</span><span class="p">()));</span> <span class="p">}</span>
+</span><span class='line'>                <span class="nb">Some</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span> <span class="n">b</span> <span class="o">=</span> <span class="nb">Some</span><span class="p">(</span><span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">d</span><span class="p">.</span><span class="n">expect_struct_value</span><span class="p">()));</span> <span class="p">}</span>
+</span><span class='line'>                <span class="nb">Some</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span> <span class="n">c</span> <span class="o">=</span> <span class="nb">Some</span><span class="p">(</span><span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">d</span><span class="p">.</span><span class="n">expect_struct_value</span><span class="p">()));</span> <span class="p">}</span>
+</span><span class='line'>                <span class="nb">Some</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="n">unreachable</span><span class="o">!</span><span class="p">(),</span>
+</span><span class='line'>                <span class="nb">None</span> <span class="o">=&gt;</span> <span class="p">{</span> <span class="kd">let</span> <span class="n">_</span><span class="o">:</span> <span class="n">IgnoreTokens</span> <span class="o">=</span> <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">Deserialize</span><span class="o">::</span><span class="n">deserialize</span><span class="p">(</span><span class="n">d</span><span class="p">));</span> <span class="p">}</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="nb">Ok</span><span class="p">(</span><span class="n">Inner</span> <span class="p">{</span> <span class="n">a</span><span class="o">:</span> <span class="n">a</span><span class="p">.</span><span class="n">unwrap</span><span class="p">(),</span> <span class="n">b</span><span class="o">:</span> <span class="n">b</span><span class="p">.</span><span class="n">unwrap</span><span class="p">(),</span> <span class="n">c</span><span class="o">:</span> <span class="n">c</span><span class="p">.</span><span class="n">unwrap</span><span class="p">()</span> <span class="p">})</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>It&rsquo;s more complicated than <code>libserialize</code>&rsquo;s struct parsing, but it performs
+much better because it can handle out of order maps without buffering tokens.</p>
+
+<h3>Serialization</h3>
+
+<p>Serialization&rsquo;s story is a much simpler one. Conceptually
+<code>serde::ser::Serializer</code>/<code>serde::ser::Serialize</code> are inspired by the
+deserialization story, but we don&rsquo;t need the tagged tokens because we already
+know the types. Here are the traits:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">Serialize</span><span class="o">&lt;</span><span class="n">S</span><span class="o">:</span> <span class="n">Serializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span> <span class="n">s</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">S</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">Serializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_null</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_bool</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="kt">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_int</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="kt">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">serialize_i64</span><span class="p">(</span><span class="n">v</span> <span class="k">as</span> <span class="kt">i64</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_i8</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="kt">i8</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">serialize_i64</span><span class="p">(</span><span class="n">v</span> <span class="k">as</span> <span class="kt">i64</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_i16</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="kt">i16</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">serialize_i64</span><span class="p">(</span><span class="n">v</span> <span class="k">as</span> <span class="kt">i64</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_i32</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="kt">i32</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">serialize_i64</span><span class="p">(</span><span class="n">v</span> <span class="k">as</span> <span class="kt">i64</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_i64</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="kt">i64</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_uint</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="kt">uint</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">serialize_u64</span><span class="p">(</span><span class="n">v</span> <span class="k">as</span> <span class="kt">u64</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_u8</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="kt">u8</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">serialize_u64</span><span class="p">(</span><span class="n">v</span> <span class="k">as</span> <span class="kt">u64</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_u16</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="kt">u16</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">serialize_u64</span><span class="p">(</span><span class="n">v</span> <span class="k">as</span> <span class="kt">u64</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_u32</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="kt">u32</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">serialize_u64</span><span class="p">(</span><span class="n">v</span> <span class="k">as</span> <span class="kt">u64</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_u64</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="kt">u64</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_f32</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="kt">f32</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">serialize_f64</span><span class="p">(</span><span class="n">v</span> <span class="k">as</span> <span class="kt">f64</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_f64</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="kt">f64</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_char</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="n">char</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_str</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="o">&amp;</span><span class="kt">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_tuple_start</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">len</span><span class="o">:</span> <span class="kt">uint</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_tuple_elt</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">T</span><span class="o">:</span> <span class="n">Serialize</span><span class="o">&lt;</span><span class="n">Self</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="o">&amp;</span><span class="n">T</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_tuple_end</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_struct_start</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="o">:</span> <span class="o">&amp;</span><span class="kt">str</span><span class="p">,</span> <span class="n">len</span><span class="o">:</span> <span class="kt">uint</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_struct_elt</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">T</span><span class="o">:</span> <span class="n">Serialize</span><span class="o">&lt;</span><span class="n">Self</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="o">:</span> <span class="o">&amp;</span><span class="kt">str</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="o">&amp;</span><span class="n">T</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_struct_end</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_enum_start</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="o">:</span> <span class="o">&amp;</span><span class="kt">str</span><span class="p">,</span> <span class="n">variant</span><span class="o">:</span> <span class="o">&amp;</span><span class="kt">str</span><span class="p">,</span> <span class="n">len</span><span class="o">:</span> <span class="kt">uint</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_enum_elt</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">T</span><span class="o">:</span> <span class="n">Serialize</span><span class="o">&lt;</span><span class="n">Self</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="o">&amp;</span><span class="n">T</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_enum_end</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_option</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">T</span><span class="o">:</span> <span class="n">Serialize</span><span class="o">&lt;</span><span class="n">Self</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="o">&amp;</span><span class="nb">Option</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_seq</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">T</span><span class="o">:</span> <span class="n">Serialize</span><span class="o">&lt;</span><span class="n">Self</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">,</span>
+</span><span class='line'>        <span class="n">Iter</span><span class="o">:</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">iter</span><span class="o">:</span> <span class="n">Iter</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_map</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">K</span><span class="o">:</span> <span class="n">Serialize</span><span class="o">&lt;</span><span class="n">Self</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">,</span>
+</span><span class='line'>        <span class="n">V</span><span class="o">:</span> <span class="n">Serialize</span><span class="o">&lt;</span><span class="n">Self</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">,</span>
+</span><span class='line'>        <span class="n">Iter</span><span class="o">:</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="p">(</span><span class="n">K</span><span class="p">,</span> <span class="n">V</span><span class="p">)</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">iter</span><span class="o">:</span> <span class="n">Iter</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>There are many default methods, so only a handful of implementations need to be
+specified. Now lets look at how they are used. Here&rsquo;s a simple
+<code>AssertSerializer</code> that I use in my test suite to make sure I&rsquo;m serializing
+properly:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">struct</span> <span class="n">AssertSerializer</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">iter</span><span class="o">:</span> <span class="n">Iter</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="p">,</span> <span class="n">Iter</span><span class="o">:</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="n">Token</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="o">&gt;&gt;&gt;</span> <span class="n">AssertSerializer</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">new</span><span class="p">(</span><span class="n">iter</span><span class="o">:</span> <span class="n">Iter</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AssertSerializer</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">AssertSerializer</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">iter</span><span class="o">:</span> <span class="n">iter</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize</span><span class="o">&lt;</span><span class="nl">&#39;b</span><span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="o">:</span> <span class="n">Token</span><span class="o">&lt;</span><span class="nl">&#39;b</span><span class="o">&gt;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">t</span> <span class="o">=</span> <span class="k">match</span> <span class="bp">self</span><span class="p">.</span><span class="n">iter</span><span class="p">.</span><span class="n">next</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nb">Some</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="n">t</span><span class="p">,</span>
+</span><span class='line'>            <span class="nb">None</span> <span class="o">=&gt;</span> <span class="p">{</span> <span class="n">panic</span><span class="o">!</span><span class="p">();</span> <span class="p">}</span>
+</span><span class='line'>        <span class="p">};</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">assert_eq</span><span class="o">!</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">token</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="nb">Ok</span><span class="p">(())</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="p">,</span> <span class="n">Iter</span><span class="o">:</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="n">Token</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="o">&gt;&gt;&gt;</span> <span class="n">Serializer</span><span class="o">&lt;</span><span class="n">Error</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">AssertSerializer</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_null</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">serialize</span><span class="p">(</span><span class="n">Token</span><span class="o">::</span><span class="n">Null</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_bool</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="kt">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">serialize</span><span class="p">(</span><span class="n">Token</span><span class="o">::</span><span class="nb">Bool</span><span class="p">(</span><span class="n">v</span><span class="p">))</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_int</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="kt">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">serialize</span><span class="p">(</span><span class="n">Token</span><span class="o">::</span><span class="nb">Int</span><span class="p">(</span><span class="n">v</span><span class="p">))</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>    <span class="p">...</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Implementing <code>Serialize</code> for values follows the same pattern. Here&rsquo;s <code>bool</code>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="n">S</span><span class="o">:</span> <span class="n">Serializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="n">Serialize</span><span class="o">&lt;</span><span class="n">S</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="k">for</span> <span class="kt">bool</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span> <span class="n">s</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">S</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">s</span><span class="p">.</span><span class="n">serialize_bool</span><span class="p">(</span><span class="o">*</span><span class="bp">self</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>Vec&lt;T&gt;</code>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">impl</span><span class="o">&lt;</span>
+</span><span class='line'>    <span class="n">S</span><span class="o">:</span> <span class="n">Serializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">E</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">T</span><span class="o">:</span> <span class="n">Serialize</span><span class="o">&lt;</span><span class="n">S</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'><span class="o">&gt;</span> <span class="n">Serialize</span><span class="o">&lt;</span><span class="n">S</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">Vec</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span> <span class="n">s</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">S</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">s</span><span class="p">.</span><span class="n">serialize_seq</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">iter</span><span class="p">())</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">Serializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="p">...</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_seq</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">T</span><span class="o">:</span> <span class="n">Serialize</span><span class="o">&lt;</span><span class="n">AssertSerializer</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">Error</span><span class="o">&gt;</span><span class="p">,</span>
+</span><span class='line'>        <span class="n">SeqIter</span><span class="o">:</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="k">mut</span> <span class="n">iter</span><span class="o">:</span> <span class="n">SeqIter</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="p">(</span><span class="n">len</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span> <span class="o">=</span> <span class="n">iter</span><span class="p">.</span><span class="n">size_hint</span><span class="p">();</span>
+</span><span class='line'>        <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">serialize</span><span class="p">(</span><span class="n">Token</span><span class="o">::</span><span class="n">SeqStart</span><span class="p">(</span><span class="n">len</span><span class="p">)));</span>
+</span><span class='line'>        <span class="k">for</span> <span class="n">elt</span> <span class="k">in</span> <span class="n">iter</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">elt</span><span class="p">.</span><span class="n">serialize</span><span class="p">(</span><span class="bp">self</span><span class="p">));</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">serialize</span><span class="p">(</span><span class="n">Token</span><span class="o">::</span><span class="n">SeqEnd</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="p">...</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And structs:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">struct</span> <span class="n">Inner</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">a</span><span class="o">:</span> <span class="p">(),</span>
+</span><span class='line'>    <span class="n">b</span><span class="o">:</span> <span class="kt">uint</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">c</span><span class="o">:</span> <span class="n">TreeMap</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span> <span class="nb">Option</span><span class="o">&lt;</span><span class="n">char</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span><span class="o">&lt;</span>
+</span><span class='line'>  <span class="n">S</span><span class="o">:</span> <span class="n">Serializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span>
+</span><span class='line'>  <span class="n">E</span>
+</span><span class='line'><span class="o">&gt;</span> <span class="n">Serialize</span><span class="o">&lt;</span><span class="n">S</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">Inner</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span> <span class="n">s</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">S</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">serialize_struct_start</span><span class="p">(</span><span class="s">&quot;Inner&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="k">u</span><span class="p">));</span>
+</span><span class='line'>        <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">serialize_struct_elt</span><span class="p">(</span><span class="s">&quot;a&quot;</span><span class="p">,</span> <span class="o">&amp;</span><span class="bp">self</span><span class="p">.</span><span class="n">a</span><span class="p">));</span>
+</span><span class='line'>        <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">serialize_struct_elt</span><span class="p">(</span><span class="s">&quot;b&quot;</span><span class="p">,</span> <span class="o">&amp;</span><span class="bp">self</span><span class="p">.</span><span class="n">b</span><span class="p">));</span>
+</span><span class='line'>        <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">serialize_struct_elt</span><span class="p">(</span><span class="s">&quot;c&quot;</span><span class="p">,</span> <span class="o">&amp;</span><span class="bp">self</span><span class="p">.</span><span class="n">c</span><span class="p">));</span>
+</span><span class='line'>        <span class="n">s</span><span class="p">.</span><span class="n">serialize_struct_end</span><span class="p">()</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Much simpler than deserialization.</p>
+
+<h2>Performance</h2>
+
+<p>So how does it perform? Here&rsquo;s the serialization benchmarks, with yet another
+ordering. This time sorted by the performance:</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library         </th>
+<th> format                 </th>
+<th> serialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> Rust     </td>
+<td> capnproto-rust  </td>
+<td> Cap&#8217;n Proto (unpacked) </td>
+<td> 4349                 </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> go-capnproto    </td>
+<td> Cap&#8217;n Proto            </td>
+<td> 3824.20              </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> bincode         </td>
+<td> Binary                 </td>
+<td> 1020                 </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> gogoprotobuf    </td>
+<td> Protocol Buffers       </td>
+<td> 596.78               </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> capnproto-rust  </td>
+<td> Cap&#8217;n Proto (packed)   </td>
+<td> 583                  </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> rust-msgpack    </td>
+<td> MessagePack            </td>
+<td> 397                  </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> rust-protobuf   </td>
+<td> Protocol Buffers       </td>
+<td> 357                  </td>
+</tr>
+<tr>
+<td> C++      </td>
+<td> rapidjson       </td>
+<td> JSON                   </td>
+<td> 304                  </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>serde::json</strong> </td>
+<td> <strong>JSON</strong>               </td>
+<td> <strong>222</strong>              </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> goprotobuf      </td>
+<td> Protocol Buffers       </td>
+<td> 214.68               </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> ffjson          </td>
+<td> JSON                   </td>
+<td> 147.37               </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> serialize::json </td>
+<td> JSON                   </td>
+<td> 147                  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> encoding/json   </td>
+<td> JSON                   </td>
+<td> 80.49                </td>
+</tr>
+</tbody>
+</table>
+
+
+<p><code>serde::json</code> is doing pretty good! It still has got a ways to go to catch up
+to <a href="https://github.com/miloyip/rapidjson">rapidjson</a>, but it&rsquo;s pretty cool it&rsquo;s
+beating <a href="https://github.com/golang/protobuf">goprotobuf</a> out of the box :)</p>
+
+<p>Here are the deserialization numbers:</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library         </th>
+<th> format                  </th>
+<th> deserialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> Rust     </td>
+<td> capnproto-rust  </td>
+<td> Cap&#8217;n Proto (unpacked)  </td>
+<td> 2185                   </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> go-capnproto    </td>
+<td> Cap&#8217;n Proto (zero copy) </td>
+<td> 1407.95                </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> go-capnproto    </td>
+<td> Cap&#8217;n Proto             </td>
+<td> 711.77                 </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> capnproto-rust  </td>
+<td> Cap&#8217;n Proto (packed)    </td>
+<td> 351                    </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> gogoprotobuf    </td>
+<td> Protocol Buffers        </td>
+<td> 272.68                 </td>
+</tr>
+<tr>
+<td> C++      </td>
+<td> rapidjson       </td>
+<td> JSON (sax)              </td>
+<td> 189                    </td>
+</tr>
+<tr>
+<td> C++      </td>
+<td> rapidjson       </td>
+<td> JSON (dom)              </td>
+<td> 162                    </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> rust-msgpack    </td>
+<td> MessagePack             </td>
+<td> 138                    </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> rust-protobuf   </td>
+<td> Protocol Buffers        </td>
+<td> 129                    </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> ffjson          </td>
+<td> JSON                    </td>
+<td> 95.06                  </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> bincode         </td>
+<td> Binary                  </td>
+<td> 80                     </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> goprotobuf      </td>
+<td> Protocol Buffers        </td>
+<td> 79.78                  </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>serde::json</strong> </td>
+<td> <strong>JSON</strong>                </td>
+<td> <strong>67</strong>                 </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> serialize::json </td>
+<td> JSON                    </td>
+<td> 24                     </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> encoding/json   </td>
+<td> JSON                    </td>
+<td> 22.79                  </td>
+</tr>
+</tbody>
+</table>
+
+
+<p>Well on the plus side, <code>serde::json</code> nearly 3 times faster than
+<code>libserialize::json</code>. On the downside rapidjson is nearly 3 times faster than
+us in it&rsquo;s SAX style parsing. Even the newly added deserialization support in
+<a href="https://github.com/pquerna/ffjson">ffjson</a> is 1.4 times faster than us. So we
+got more work cut out for us!</p>
+
+<p>Next time, serde2!</p>
+
+<p>PS: I&rsquo;m definitely getting close to the end of my story, and while I have some
+better numbers with serde2, nothing is quite putting me in the rapidjson
+range. Anyone want to help optimize
+<a href="https://github.com/erickt/rust-serde">serde</a>? I would greatly appreciate the help!</p>
+
+<p>PPS: I&rsquo;ve gotten a number of requests for my
+<a href="https://github.com/erickt/rust-serialization-benchmarks">serialization benchmarks</a>
+to be ported over to other languages and libraries. Especially a C++ version
+of Cap&#8217;n Proto. Unfortunately I don&rsquo;t really have the time to do it myself.
+Would anyone be up for helping to implement it?</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Using Rust to Make a Safer Interface for Yahoo's Fast MDBM Database]]></title>
@@ -72,7 +1427,7 @@ well:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>% crate new --no-git mdbm-sys
+</pre></td><td class='code'><pre><code class=''><span class='line'>% cargo new --no-git mdbm-sys
 </span><span class='line'>% cd mdbm-sys</span></code></pre></td></tr></table></div></figure>
 
 
