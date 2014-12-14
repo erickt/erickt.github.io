@@ -539,10 +539,7 @@ impl<'a, Iter: Iterator<Token<'a>>> AssertSerializer<Iter> {
     }
 
     fn serialize<'b>(&mut self, token: Token<'b>) -> Result<(), Error> {
-        let t = match self.iter.next() {
-            Some(t) => t,
-            None => { panic!(); }
-        };
+        let t = self.iter.next().unwrap();
 
         assert_eq!(t, token);
 
