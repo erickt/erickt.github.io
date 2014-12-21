@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Rewriting Rust Serialization, Part 3.1: Another Performance Digression"
-date: 2014-12-13 20:35:08 -0800
+date: 2014-12-13 18:35:08 -0800
 comments: true
 categories: [rust, serialization]
 ---
@@ -180,3 +180,7 @@ to reduce `IoError` down to a word, we get the performance up to 730MB/s! We
 also might get enum compression, so a type like `Result<(), IoError>` then
 would speed up to 1200MB/s! I think going in this direction is going to really
 help speed things up.
+
+---
+
+That was taking a while, so until next time!
