@@ -353,10 +353,6 @@ grammar:</p>
 <span class='line-number'>40</span>
 <span class='line-number'>41</span>
 <span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
 </pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">Deserialize</span><span class="o">&lt;</span><span class="n">D</span><span class="o">:</span> <span class="n">Deserializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
 </span><span class='line'>    <span class="k">fn</span> <span class="n">deserialize</span><span class="p">(</span><span class="n">d</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">D</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Self</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
 </span><span class='line'>        <span class="kd">let</span> <span class="n">token</span> <span class="o">=</span> <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">d</span><span class="p">.</span><span class="n">expect_token</span><span class="p">());</span>
@@ -394,11 +390,7 @@ grammar:</p>
 </span><span class='line'>
 </span><span class='line'>    <span class="cp">#[inline]</span>
 </span><span class='line'>    <span class="k">fn</span> <span class="n">expect_token</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Token</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
-</span><span class='line'>        <span class="k">match</span> <span class="bp">self</span><span class="p">.</span><span class="n">next</span><span class="p">()</span> <span class="p">{</span>
-</span><span class='line'>            <span class="nb">Some</span><span class="p">(</span><span class="nb">Ok</span><span class="p">(</span><span class="n">token</span><span class="p">))</span> <span class="o">=&gt;</span> <span class="nb">Ok</span><span class="p">(</span><span class="n">token</span><span class="p">),</span>
-</span><span class='line'>            <span class="nb">Some</span><span class="p">(</span><span class="nb">Err</span><span class="p">(</span><span class="n">err</span><span class="p">))</span> <span class="o">=&gt;</span> <span class="nb">Err</span><span class="p">(</span><span class="n">err</span><span class="p">),</span>
-</span><span class='line'>            <span class="nb">None</span> <span class="o">=&gt;</span> <span class="nb">Err</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">end_of_stream_error</span><span class="p">()),</span>
-</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">next</span><span class="p">().</span><span class="n">unwrap_or_else</span><span class="p">(</span><span class="o">||</span> <span class="nb">Err</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">end_of_stream_error</span><span class="p">()))</span>
 </span><span class='line'>    <span class="p">}</span>
 </span><span class='line'>
 </span><span class='line'>    <span class="p">...</span>
@@ -461,9 +453,6 @@ what&rsquo;s probably the simplest <code>Deserializer</code>, which just wraps a
 <span class='line-number'>48</span>
 <span class='line-number'>49</span>
 <span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
 </pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">enum</span> <span class="n">Error</span> <span class="p">{</span>
 </span><span class='line'>    <span class="n">EndOfStream</span><span class="p">,</span>
 </span><span class='line'>    <span class="n">SyntaxError</span><span class="p">(</span><span class="n">Vec</span><span class="o">&lt;</span><span class="n">TokenKind</span><span class="o">&gt;</span><span class="p">),</span>
@@ -486,10 +475,7 @@ what&rsquo;s probably the simplest <code>Deserializer</code>, which just wraps a
 </span><span class='line'>
 </span><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">:</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="n">Token</span><span class="o">&gt;&gt;</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="nb">Result</span><span class="o">&lt;</span><span class="n">Token</span><span class="p">,</span> <span class="n">Error</span><span class="o">&gt;&gt;</span> <span class="k">for</span> <span class="n">TokenDeserializer</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">&gt;</span> <span class="p">{</span>
 </span><span class='line'>    <span class="k">fn</span> <span class="n">next</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">option</span><span class="o">::</span><span class="nb">Option</span><span class="o">&lt;</span><span class="nb">Result</span><span class="o">&lt;</span><span class="n">Token</span><span class="p">,</span> <span class="n">Error</span><span class="o">&gt;&gt;</span> <span class="p">{</span>
-</span><span class='line'>        <span class="k">match</span> <span class="bp">self</span><span class="p">.</span><span class="n">tokens</span><span class="p">.</span><span class="n">next</span><span class="p">()</span> <span class="p">{</span>
-</span><span class='line'>            <span class="nb">None</span> <span class="o">=&gt;</span> <span class="nb">None</span><span class="p">,</span>
-</span><span class='line'>            <span class="nb">Some</span><span class="p">(</span><span class="n">token</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="nb">Some</span><span class="p">(</span><span class="nb">Ok</span><span class="p">(</span><span class="n">token</span><span class="p">)),</span>
-</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">tokens</span><span class="p">.</span><span class="n">next</span><span class="p">().</span><span class="n">map</span><span class="p">(</span><span class="o">|</span><span class="n">token</span><span class="o">|</span> <span class="nb">Ok</span><span class="p">(</span><span class="n">token</span><span class="p">))</span>
 </span><span class='line'>    <span class="p">}</span>
 </span><span class='line'><span class="p">}</span>
 </span><span class='line'>
@@ -1484,6 +1470,8 @@ Would anyone be up for helping to implement it?</p>
         <a class="basic-alignment left" href="/blog/2014/12/13/rust-and-mdbm/" title="Previous Post: Using Rust to make a safer interface for Yahoo's Fast MDBM database">&laquo; Using Rust to make a safer interface for Yahoo&#8217;s Fast MDBM database</a>
       
       
+        <a class="basic-alignment right" href="/blog/2014/12/13/performance-digression/" title="Next Post: Rewriting Rust Serialization, Part 3.1: Another Performance Digression">Rewriting Rust Serialization, Part 3.1: Another Performance Digression &raquo;</a>
+      
     </p>
   </footer>
 </article>
@@ -1495,6 +1483,10 @@ Would anyone be up for helping to implement it?</p>
     <section>
   <h1>Recent Posts</h1>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/12/13/performance-digression/">Rewriting Rust Serialization, Part 3.1: Another Performance Digression</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2014/12/13/rewriting-rust-serialization/">Rewriting Rust Serialization, Part 3: Introducing Serde</a>
@@ -1510,10 +1502,6 @@ Would anyone be up for helping to implement it?</p>
     
       <li class="post">
         <a href="/blog/2014/11/19/adventures-in-debugging-a-potential-osx-kernel-bug/">Chasing an EPROTOTYPE Through Rust, Sendto, and the OSX Kernel With C-Reduce</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2014/11/13/benchmarks-2/">Rewriting Rust Serialization, Part 2.2: More Benchmarks</a>
       </li>
     
   </ul>
