@@ -9,12 +9,9 @@
   <meta name="author" content="Erick Tryzelaar">
 
   
-  <meta name="description" content="Wow, home stretch! Here&rsquo;s the rest of the series if you want to catch up:
-part 1,
-part 2,
-part 2.1,
-part 2.2, and
-part 3. Overall serde&rsquo;s &hellip;">
+  <meta name="description" content="I use and love syntax extensions, and I&rsquo;m planning on using them to simplify
+down how one interacts with a system like
+serde. Unfortunately &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -82,6 +79,342 @@ part 3. Overall serde&rsquo;s &hellip;">
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/02/09/syntex-syntex-extensions-for-rust-1-dot-0/">Syntex: Syntax Extensions for Rust 1.0</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-02-09T19:37:32-08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>9</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:37 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>I use and love syntax extensions, and I&rsquo;m planning on using them to simplify
+down how one interacts with a system like
+<a href="https://github.com/erickt/rust-serde">serde</a>. Unfortunately though, to write
+them you need to use Rust&rsquo;s <code>libsyntax</code>, which is not going to be exposed in
+Rust 1.0 because we&rsquo;re not ready to stablize it&rsquo;s API. That would really hamper
+future development of the compiler.</p>
+
+<p>It would be so nice though, writing this for every type we want to serialize:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="cp">#[derive_deserialize]</span>
+</span><span class='line'><span class="k">struct</span> <span class="n">Point</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">x</span><span class="o">:</span> <span class="kt">int</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">y</span><span class="o">:</span> <span class="kt">int</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>instead of:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">impl</span> <span class="o">&lt;</span><span class="n">D</span><span class="o">:</span> <span class="n">Deserializer</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="n">Deserialize</span><span class="o">&lt;</span><span class="n">D</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">Point</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">deserialize_token</span><span class="p">(</span><span class="n">state</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">D</span><span class="p">,</span> <span class="n">token</span><span class="o">:</span> <span class="n">Token</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Point</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">state</span><span class="p">.</span><span class="n">expect_struct_start</span><span class="p">(</span><span class="n">token</span><span class="p">,</span> <span class="s">&quot;Point&quot;</span><span class="p">));</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="k">mut</span> <span class="n">x</span> <span class="o">=</span> <span class="nb">None</span><span class="p">;</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="k">mut</span> <span class="n">y</span> <span class="o">=</span> <span class="nb">None</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">loop</span> <span class="p">{</span>
+</span><span class='line'>            <span class="kd">let</span> <span class="n">idx</span> <span class="o">=</span> <span class="k">match</span> <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">state</span><span class="p">.</span><span class="n">expect_struct_field_or_end</span><span class="p">(</span><span class="o">&amp;</span><span class="p">[</span><span class="s">&quot;x&quot;</span><span class="p">,</span> <span class="s">&quot;y&quot;</span><span class="p">]))</span> <span class="p">{</span>
+</span><span class='line'>                <span class="nb">Some</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="n">idx</span><span class="p">,</span>
+</span><span class='line'>                <span class="nb">None</span> <span class="o">=&gt;</span> <span class="p">{</span> <span class="k">break</span> <span class="p">;</span> <span class="p">}</span>
+</span><span class='line'>            <span class="p">};</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="k">match</span> <span class="n">idx</span> <span class="p">{</span>
+</span><span class='line'>                <span class="nb">Some</span><span class="p">(</span><span class="mi">0</span><span class="k">u</span><span class="n">s</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span> <span class="n">x</span> <span class="o">=</span> <span class="nb">Some</span><span class="p">(</span><span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">state</span><span class="p">.</span><span class="n">expect_struct_value</span><span class="p">()));</span> <span class="p">}</span>
+</span><span class='line'>                <span class="nb">Some</span><span class="p">(</span><span class="mi">1</span><span class="k">u</span><span class="n">s</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span> <span class="n">y</span> <span class="o">=</span> <span class="nb">Some</span><span class="p">(</span><span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">state</span><span class="p">.</span><span class="n">expect_struct_value</span><span class="p">()));</span> <span class="p">}</span>
+</span><span class='line'>                <span class="nb">None</span> <span class="o">|</span> <span class="nb">Some</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span> <span class="n">panic</span><span class="o">!</span><span class="p">()</span> <span class="p">}</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">x</span> <span class="o">=</span> <span class="k">match</span> <span class="n">x</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nb">Some</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="n">x</span><span class="p">,</span>
+</span><span class='line'>            <span class="nb">None</span> <span class="o">=&gt;</span> <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">state</span><span class="p">.</span><span class="n">missing_field</span><span class="p">(</span><span class="s">&quot;x&quot;</span><span class="p">)),</span>
+</span><span class='line'>        <span class="p">};</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">y</span> <span class="o">=</span> <span class="k">match</span> <span class="n">y</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nb">Some</span><span class="p">(</span><span class="n">y</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="n">y</span><span class="p">,</span>
+</span><span class='line'>            <span class="nb">None</span> <span class="o">=&gt;</span> <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">state</span><span class="p">.</span><span class="n">missing_field</span><span class="p">(</span><span class="s">&quot;y&quot;</span><span class="p">)),</span>
+</span><span class='line'>        <span class="p">};</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="nb">Ok</span><span class="p">(</span><span class="n">Point</span><span class="p">{</span><span class="n">x</span><span class="o">:</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="o">:</span> <span class="n">y</span><span class="p">,})</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So I want to announce my plan on how to deal with this (and also publically
+announce that everyone can blame me if this turns out to hurt Rust&rsquo;s future
+development). I&rsquo;ve started <a href="https://github.com/erickt/rust-syntex">syntex</a>, a
+library that enables code generation using an unofficial tracking fork of
+<code>libsyntax</code>. In order to deal with the fact that <code>libsyntax</code> might make
+breaking changes between minor Rust releases, we will just release a minor or
+major release of <code>syntex</code>, depending on if there were any breaking changes in
+<code>libsyntax</code>.  Ideally <code>syntex</code> will allow the community to experiment with
+different code generation approaches to see what would be worth merging
+upstream. Or even better, what hooks are needed in the compiler so it doesn&rsquo;t
+have to think about syntax extensions at all.</p>
+
+<p>I&rsquo;ve got the basic version working right now. Here&rsquo;s a simple
+<code>hello_world_macros</code> syntax extension (you can see the actual code
+<a href="https://github.com/erickt/rust-syntex/tree/master/hello_world">here</a>).
+First, the <code>hello_world_macros/Cargo.toml</code>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class='toml'><span class='line'><span class="p">[</span><span class="n">package</span><span class="p">]</span>
+</span><span class='line'><span class="n">name</span> <span class="o">=</span> <span class="s">&quot;hello_world_macros&quot;</span>
+</span><span class='line'><span class="n">version</span> <span class="o">=</span> <span class="s">&quot;0.2.0&quot;</span>
+</span><span class='line'><span class="n">authors</span> <span class="o">=</span> <span class="p">[</span> <span class="s">&quot;erick.tryzelaar@gmail.com&quot;</span> <span class="p">]</span>
+</span><span class='line'>
+</span><span class='line'><span class="p">[</span><span class="n">dependencies</span><span class="p">]</span>
+</span><span class='line'><span class="n">syntex</span> <span class="o">=</span> <span class="s">&quot;*&quot;</span>
+</span><span class='line'><span class="n">syntex_syntax</span> <span class="o">=</span> <span class="s">&quot;*&quot;</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>syntex_syntax</code> is the crate for my fork of <code>libsyntax</code>, and <code>syntex</code>
+provides some helper functions to ease registering syntax extensions.</p>
+
+<p>Then the <code>src/lib.rs</code>, which declares a macro <code>hello_world</code> that just produces a
+<code>"hello world"</code> string:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">syntex</span><span class="p">;</span>
+</span><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">syntex_syntax</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="kn">use</span> <span class="n">syntex</span><span class="o">::</span><span class="n">Registry</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="kn">use</span> <span class="n">syntex_syntax</span><span class="o">::</span><span class="n">ast</span><span class="o">::</span><span class="n">TokenTree</span><span class="p">;</span>
+</span><span class='line'><span class="kn">use</span> <span class="n">syntex_syntax</span><span class="o">::</span><span class="n">codemap</span><span class="o">::</span><span class="n">Span</span><span class="p">;</span>
+</span><span class='line'><span class="kn">use</span> <span class="n">syntex_syntax</span><span class="o">::</span><span class="n">ext</span><span class="o">::</span><span class="n">base</span><span class="o">::</span><span class="p">{</span><span class="n">ExtCtxt</span><span class="p">,</span> <span class="n">MacExpr</span><span class="p">,</span> <span class="n">MacResult</span><span class="p">,</span> <span class="n">TTMacroExpander</span><span class="p">};</span>
+</span><span class='line'><span class="kn">use</span> <span class="n">syntex_syntax</span><span class="o">::</span><span class="n">ext</span><span class="o">::</span><span class="n">build</span><span class="o">::</span><span class="n">AstBuilder</span><span class="p">;</span>
+</span><span class='line'><span class="kn">use</span> <span class="n">syntex_syntax</span><span class="o">::</span><span class="n">parse</span><span class="o">::</span><span class="n">token</span><span class="o">::</span><span class="n">InternedString</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">fn</span> <span class="n">expand_hello_world</span><span class="o">&lt;</span><span class="nl">&#39;cx</span><span class="o">&gt;</span><span class="p">(</span>
+</span><span class='line'>    <span class="n">cx</span><span class="o">:</span> <span class="o">&amp;</span><span class="n">&#39;cx</span> <span class="k">mut</span> <span class="n">ExtCtxt</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">sp</span><span class="o">:</span> <span class="n">Span</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">tts</span><span class="o">:</span> <span class="o">&amp;</span><span class="p">[</span><span class="n">TokenTree</span><span class="p">]</span>
+</span><span class='line'><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Box</span><span class="o">&lt;</span><span class="n">MacResult</span> <span class="o">+</span> <span class="nl">&#39;cx</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">expr</span> <span class="o">=</span> <span class="n">cx</span><span class="p">.</span><span class="n">expr_str</span><span class="p">(</span><span class="n">sp</span><span class="p">,</span> <span class="n">InternedString</span><span class="o">::</span><span class="n">new</span><span class="p">(</span><span class="s">&quot;hello world&quot;</span><span class="p">));</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">MacExpr</span><span class="o">::</span><span class="n">new</span><span class="p">(</span><span class="n">expr</span><span class="p">)</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">pub</span> <span class="k">fn</span> <span class="n">register</span><span class="p">(</span><span class="n">registry</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">Registry</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">registry</span><span class="p">.</span><span class="n">register_fn</span><span class="p">(</span><span class="s">&quot;hello_world&quot;</span><span class="p">,</span> <span class="n">expand_hello_world</span><span class="p">);</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Now to use it. This is a little more complicated because we have to do code
+generation, but Cargo helps with that. Our strategy is use a <code>build.rs</code> script
+to do code generation in a <code>main.rss</code> file, and then use the <code>include!()</code> macro
+to include it into our dummy <code>main.rs</code> file. Here&rsquo;s the <code>Cargo.toml</code> we need:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="p">[</span><span class="n">package</span><span class="p">]</span>
+</span><span class='line'><span class="n">name</span> <span class="o">=</span> <span class="s">&quot;hello_world&quot;</span>
+</span><span class='line'><span class="n">version</span> <span class="o">=</span> <span class="s">&quot;0.2.0&quot;</span>
+</span><span class='line'><span class="n">authors</span> <span class="o">=</span> <span class="p">[</span> <span class="s">&quot;erick.tryzelaar@gmail.com&quot;</span> <span class="p">]</span>
+</span><span class='line'><span class="n">build</span> <span class="o">=</span> <span class="s">&quot;build.rs&quot;</span>
+</span><span class='line'>
+</span><span class='line'><span class="p">[</span><span class="n">build</span><span class="o">-</span><span class="n">dependencies</span><span class="p">]</span>
+</span><span class='line'><span class="n">syntex</span> <span class="o">=</span> <span class="s">&quot;*&quot;</span>
+</span><span class='line'><span class="n">syntex_syntax</span> <span class="o">=</span> <span class="s">&quot;*&quot;</span>
+</span><span class='line'>
+</span><span class='line'><span class="p">[</span><span class="n">build</span><span class="o">-</span><span class="n">dependencies</span><span class="p">.</span><span class="n">hello_world_macros</span><span class="p">]</span>
+</span><span class='line'><span class="n">path</span> <span class="o">=</span> <span class="s">&quot;hello_world_macros&quot;</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Here&rsquo;s the <code>build.rs</code>, which actually performs the code generation:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">syntex</span><span class="p">;</span>
+</span><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">hello_world_macros</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="kn">use</span> <span class="n">std</span><span class="o">::</span><span class="n">os</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">fn</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="k">mut</span> <span class="n">registry</span> <span class="o">=</span> <span class="n">syntex</span><span class="o">::</span><span class="n">Registry</span><span class="o">::</span><span class="n">new</span><span class="p">();</span>
+</span><span class='line'>    <span class="n">hello_world_macros</span><span class="o">::</span><span class="n">register</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">registry</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">registry</span><span class="p">.</span><span class="n">expand</span><span class="p">(</span>
+</span><span class='line'>        <span class="s">&quot;hello_world&quot;</span><span class="p">,</span>
+</span><span class='line'>        <span class="o">&amp;</span><span class="nb">Path</span><span class="o">::</span><span class="n">new</span><span class="p">(</span><span class="s">&quot;src/main.rss&quot;</span><span class="p">),</span>
+</span><span class='line'>        <span class="o">&amp;</span><span class="nb">Path</span><span class="o">::</span><span class="n">new</span><span class="p">(</span><span class="n">os</span><span class="o">::</span><span class="n">getenv</span><span class="p">(</span><span class="s">&quot;OUT_DIR&quot;</span><span class="p">).</span><span class="n">unwrap</span><span class="p">()).</span><span class="n">join</span><span class="p">(</span><span class="s">&quot;main.rs&quot;</span><span class="p">));</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Our <code>main.rs</code> driver script:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="c1">// Include the real main</span>
+</span><span class='line'><span class="n">include</span><span class="o">!</span><span class="p">(</span><span class="n">concat</span><span class="o">!</span><span class="p">(</span><span class="n">env</span><span class="o">!</span><span class="p">(</span><span class="s">&quot;OUT_DIR&quot;</span><span class="p">),</span> <span class="s">&quot;/main.rs&quot;</span><span class="p">));</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And finally the <code>main.rss</code>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">fn</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">s</span> <span class="o">=</span> <span class="n">hello_world</span><span class="o">!</span><span class="p">();</span>
+</span><span class='line'>    <span class="nb">println</span><span class="o">!</span><span class="p">(</span><span class="s">&quot;{}&quot;</span><span class="p">,</span> <span class="n">s</span><span class="p">);</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>One limitiation you can see above is that we unfortunately can&rsquo;t compose our
+macros with the Rust macros is that <code>syntex</code> currently has no awareness of the
+Rust macros, and since macros are parsed outside-in, we have to leave the
+tokens inside a macro like <code>println!()</code> untouched.</p>
+
+<hr />
+
+<p>That&rsquo;s <code>syntex</code>. There is a bunch of more work left to be done in <code>syntex</code>
+to make it really useable. There&rsquo;s also a lot of work in Rust and Cargo that
+would help it be really effective:</p>
+
+<ul>
+<li>We need a way to inform Rust that this block of code is actually coming from
+a different file than the one it&rsquo;s processing. This is roughly equivalent to
+  the <a href="https://gcc.gnu.org/onlinedocs/cpp/Line-Control.html">#line</a> macros in
+<code>C</code>.</li>
+<li>We could upstream the &ldquo;ignore unknown macros&rdquo; patch to minimize
+changes to <code>libsyntax</code>.</li>
+<li>It would be nice if we could allow <code>#[path]</code> to reference an environment
+variable. This would be a little cleaner than using <code>include!(...)</code>.</li>
+<li>We need a way to extract macros from a crate.</li>
+</ul>
+
+
+<p>On Cargo&rsquo;s side:</p>
+
+<ul>
+<li>It would be nice if Cargo could be told to use a generated file as the
+<code>main.rs</code>/<code>lib.rs</code>/etc.</li>
+<li><code>Cargo.toml</code> could grow a plugin mechanism to remove the need to write a
+<code>build.rs</code> script.</li>
+</ul>
+
+
+<p>I&rsquo;m sure there&rsquo;s plenty more that needs to get done! So, please help out!</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -5451,149 +5784,6 @@ approach to fix this in <a href="https://github.com/erickt/rust-serde">serde</a>
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2012/07/29/rust-for-ragel/">Rust for Ragel</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2012-07-29T10:20:00-07:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>29</span><span class='date-suffix'>th</span>, <span class='date-year'>2012</span></span> <span class='time'>10:20 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>I&rsquo;ve written a bunch of simple parsers for Rust, and it&rsquo;s starting to get a
-little obnoxious. So I added a Rust backend to the
-<a href="http://www.complang.org/ragel/">Ragel State Machine Compiler</a>.
-You can find my fork <a href="https://github.com/erickt/ragel">here</a>. I&rsquo;m waiting for
-Rust to stablize before I try to push it upstream.</p>
-
-<p>Ragel is a rather neat way of writing simple parsers. In some ways it&rsquo;s pretty
-similar to Lex, but Ragel also allows you execute arbitrary code at any point
-in the state machine. Furthermore, this arbitrary code can manipulate the state
-machine itself, so it can be used in many places you&rsquo;d traditionally need a
-full parser, such as properly handling parentheses.</p>
-
-<p>Here&rsquo;s an example of a <code>atoi</code> function:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>%%{
-</span><span class='line'>machine atoi;
-</span><span class='line'>
-</span><span class='line'>action see_neg   { neg = true; }
-</span><span class='line'>action add_digit { res = res * 10 + (fc as int - '0' as int); }
-</span><span class='line'>
-</span><span class='line'>main :=
-</span><span class='line'>    ( '-' @see_neg | '+' )? ( digit @add_digit )+
-</span><span class='line'>    '\n'?
-</span><span class='line'>;
-</span><span class='line'>
-</span><span class='line'>write data;
-</span><span class='line'>}%%
-</span><span class='line'>
-</span><span class='line'>fn atoi(data: ~str) -&gt; option&lt;int&gt; {
-</span><span class='line'>    let mut neg = false;
-</span><span class='line'>    let mut res = 0;
-</span><span class='line'>
-</span><span class='line'>    // Ragel assumes that it will be iterating over a value called data, but we
-</span><span class='line'>    // need to tell ragel where to start (p) and end (pe) parsing.
-</span><span class='line'>    let mut p = 0;
-</span><span class='line'>    let mut pe = data.len();
-</span><span class='line'>
-</span><span class='line'>    // This is the current state in the state machine.
-</span><span class='line'>    let mut cs: int;
-</span><span class='line'>
-</span><span class='line'>    write init;
-</span><span class='line'>    write exec;
-</span><span class='line'>
-</span><span class='line'>    if neg { res = -1 * res; }
-</span><span class='line'>
-</span><span class='line'>    // If we stopped before we hit one of the exit states, then there must have
-</span><span class='line'>    // been an error of some sort.
-</span><span class='line'>    if cs &lt; atoi_first_final {
-</span><span class='line'>        none
-</span><span class='line'>    } else {
-</span><span class='line'>        some(res)
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>While this is probably a bit more verbose than writing <code>atoi</code> by hand, it does
-make the grammar pretty explicit, which can help keep it accurate.</p>
-
-<p>Unfortunately there are some pretty severe performance issues at the moment.
-Ragel supports two state machine styles, table-driven and goto-driven. My
-backend uses tables, but since Rust doesn&rsquo;t yet support global constant
-vectors, I need to malloc the state machine table on every function call. This
-results in the <a href="https://github.com/erickt/ragel/blob/rust/examples/rust/url.rl">ragel-based url
-parser</a> being about
-10 times slower than the equivalent table-based parser in OCaml. You can see
-the generated code <a href="https://gist.github.com/3200980">here</a>.</p>
-
-<p>The <code>goto</code> route could be promising to explore. We could simulate it using
-mutually recursive function calls. OCaml does this. But again, since Rust
-doesn&rsquo;t support tailcalls (and may
-<a href="https://github.com/mozilla/rust/issues/217">ever</a>), we could run into a stack
-explosion. It may work well for small grammars though, and maybe LLVM could
-optimize calls into tailcalls.</p>
-
-<p>Unless I&rsquo;m doing something glaringly wrong, it seems likely that we are going
-to need some compiler help before these performance issues get solved.</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/2">&larr; Older</a>
@@ -5609,6 +5799,10 @@ to need some compiler help before these performance issues get solved.</p>
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/02/09/syntex-syntex-extensions-for-rust-1-dot-0/">Syntex: Syntax Extensions for Rust 1.0</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2014/12/13/performance-digression/">Rewriting Rust Serialization, Part 3.1: Another Performance Digression</a>
       </li>
     
@@ -5622,10 +5816,6 @@ to need some compiler help before these performance issues get solved.</p>
     
       <li class="post">
         <a href="/blog/2014/11/22/benchmarking-is-confusing/">Benchmarking Is Confusing in Low Level Rust</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2014/11/19/adventures-in-debugging-a-potential-osx-kernel-bug/">Chasing an EPROTOTYPE Through Rust, Sendto, and the OSX Kernel With C-Reduce</a>
       </li>
     
   </ul>
@@ -5670,7 +5860,7 @@ to need some compiler help before these performance issues get solved.</p>
     </div>
   </div>
   <footer role="contentinfo"><p>
-  Copyright &copy; 2014 - Erick Tryzelaar -
+  Copyright &copy; 2015 - Erick Tryzelaar -
   <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
 </p>
 

@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: Syntex | Tilting at Rabbit Holes]]></title>
+  <link href="http://erickt.github.io/blog/categories/syntex/atom.xml" rel="self"/>
+  <link href="http://erickt.github.io/"/>
+  <updated>2015-02-09T21:13:16-08:00</updated>
+  <id>http://erickt.github.io/</id>
+  <author>
+    <name><![CDATA[Erick Tryzelaar]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Syntex: Syntax Extensions for Rust 1.0]]></title>
+    <link href="http://erickt.github.io/blog/2015/02/09/syntex-syntex-extensions-for-rust-1-dot-0/"/>
+    <updated>2015-02-09T19:37:32-08:00</updated>
+    <id>http://erickt.github.io/blog/2015/02/09/syntex-syntex-extensions-for-rust-1-dot-0</id>
+    <content type="html"><![CDATA[<p>I use and love syntax extensions, and I&rsquo;m planning on using them to simplify
+down how one interacts with a system like
+<a href="https://github.com/erickt/rust-serde">serde</a>. Unfortunately though, to write
+them you need to use Rust&rsquo;s <code>libsyntax</code>, which is not going to be exposed in
+Rust 1.0 because we&rsquo;re not ready to stablize it&rsquo;s API. That would really hamper
+future development of the compiler.</p>
+
+<p>It would be so nice though, writing this for every type we want to serialize:</p>
+
+<pre><code class="rust">#[derive_deserialize]
+struct Point {
+    x: int,
+    y: int,
+}
+</code></pre>
+
+<p>instead of:</p>
+
+<pre><code class="rust">impl &lt;D: Deserializer&lt;E&gt;, E&gt; Deserialize&lt;D, E&gt; for Point {
+    fn deserialize_token(state: &amp;mut D, token: Token) -&gt; Result&lt;Point, E&gt; {
+        try!(state.expect_struct_start(token, "Point"));
+
+        let mut x = None;
+        let mut y = None;
+
+        loop {
+            let idx = match try!(state.expect_struct_field_or_end(&amp;["x", "y"])) {
+                Some(idx) =&gt; idx,
+                None =&gt; { break ; }
+            };
+
+            match idx {
+                Some(0us) =&gt; { x = Some(try!(state.expect_struct_value())); }
+                Some(1us) =&gt; { y = Some(try!(state.expect_struct_value())); }
+                None | Some(_) =&gt; { panic!() }
+            }
+        }
+
+        let x = match x {
+            Some(x) =&gt; x,
+            None =&gt; try!(state.missing_field("x")),
+        };
+
+        let y = match y {
+            Some(y) =&gt; y,
+            None =&gt; try!(state.missing_field("y")),
+        };
+
+        Ok(Point{x: x, y: y,})
+    }
+}
+</code></pre>
+
+<p>So I want to announce my plan on how to deal with this (and also publically
+announce that everyone can blame me if this turns out to hurt Rust&rsquo;s future
+development). I&rsquo;ve started <a href="https://github.com/erickt/rust-syntex">syntex</a>, a
+library that enables code generation using an unofficial tracking fork of
+<code>libsyntax</code>. In order to deal with the fact that <code>libsyntax</code> might make
+breaking changes between minor Rust releases, we will just release a minor or
+major release of <code>syntex</code>, depending on if there were any breaking changes in
+<code>libsyntax</code>.  Ideally <code>syntex</code> will allow the community to experiment with
+different code generation approaches to see what would be worth merging
+upstream. Or even better, what hooks are needed in the compiler so it doesn&rsquo;t
+have to think about syntax extensions at all.</p>
+
+<p>I&rsquo;ve got the basic version working right now. Here&rsquo;s a simple
+<code>hello_world_macros</code> syntax extension (you can see the actual code
+<a href="https://github.com/erickt/rust-syntex/tree/master/hello_world">here</a>).
+First, the <code>hello_world_macros/Cargo.toml</code>:</p>
+
+<pre><code class="toml">[package]
+name = "hello_world_macros"
+version = "0.2.0"
+authors = [ "erick.tryzelaar@gmail.com" ]
+
+[dependencies]
+syntex = "*"
+syntex_syntax = "*"
+</code></pre>
+
+<p>The <code>syntex_syntax</code> is the crate for my fork of <code>libsyntax</code>, and <code>syntex</code>
+provides some helper functions to ease registering syntax extensions.</p>
+
+<p>Then the <code>src/lib.rs</code>, which declares a macro <code>hello_world</code> that just produces a
+<code>"hello world"</code> string:</p>
+
+<pre><code class="rust">extern crate syntex;
+extern crate syntex_syntax;
+
+use syntex::Registry;
+
+use syntex_syntax::ast::TokenTree;
+use syntex_syntax::codemap::Span;
+use syntex_syntax::ext::base::{ExtCtxt, MacExpr, MacResult, TTMacroExpander};
+use syntex_syntax::ext::build::AstBuilder;
+use syntex_syntax::parse::token::InternedString;
+
+fn expand_hello_world&lt;'cx&gt;(
+    cx: &amp;'cx mut ExtCtxt,
+    sp: Span,
+    tts: &amp;[TokenTree]
+) -&gt; Box&lt;MacResult + 'cx&gt; {
+    let expr = cx.expr_str(sp, InternedString::new("hello world"));
+
+    MacExpr::new(expr)
+}
+
+pub fn register(registry: &amp;mut Registry) {
+    registry.register_fn("hello_world", expand_hello_world);
+}
+</code></pre>
+
+<p>Now to use it. This is a little more complicated because we have to do code
+generation, but Cargo helps with that. Our strategy is use a <code>build.rs</code> script
+to do code generation in a <code>main.rss</code> file, and then use the <code>include!()</code> macro
+to include it into our dummy <code>main.rs</code> file. Here&rsquo;s the <code>Cargo.toml</code> we need:</p>
+
+<pre><code>[package]
+name = "hello_world"
+version = "0.2.0"
+authors = [ "erick.tryzelaar@gmail.com" ]
+build = "build.rs"
+
+[build-dependencies]
+syntex = "*"
+syntex_syntax = "*"
+
+[build-dependencies.hello_world_macros]
+path = "hello_world_macros"
+</code></pre>
+
+<p>Here&rsquo;s the <code>build.rs</code>, which actually performs the code generation:</p>
+
+<pre><code class="rust">extern crate syntex;
+extern crate hello_world_macros;
+
+use std::os;
+
+fn main() {
+    let mut registry = syntex::Registry::new();
+    hello_world_macros::register(&amp;mut registry);
+
+    registry.expand(
+        "hello_world",
+        &amp;Path::new("src/main.rss"),
+        &amp;Path::new(os::getenv("OUT_DIR").unwrap()).join("main.rs"));
+}
+</code></pre>
+
+<p>Our <code>main.rs</code> driver script:</p>
+
+<pre><code class="rust">// Include the real main
+include!(concat!(env!("OUT_DIR"), "/main.rs"));
+</code></pre>
+
+<p>And finally the <code>main.rss</code>:</p>
+
+<pre><code class="rust">fn main() {
+    let s = hello_world!();
+    println!("{}", s);
+}
+</code></pre>
+
+<p>One limitiation you can see above is that we unfortunately can&rsquo;t compose our
+macros with the Rust macros is that <code>syntex</code> currently has no awareness of the
+Rust macros, and since macros are parsed outside-in, we have to leave the
+tokens inside a macro like <code>println!()</code> untouched.</p>
+
+<hr />
+
+<p>That&rsquo;s <code>syntex</code>. There is a bunch of more work left to be done in <code>syntex</code>
+to make it really useable. There&rsquo;s also a lot of work in Rust and Cargo that
+would help it be really effective:</p>
+
+<ul>
+<li>We need a way to inform Rust that this block of code is actually coming from
+a different file than the one it&rsquo;s processing. This is roughly equivalent to
+  the <a href="https://gcc.gnu.org/onlinedocs/cpp/Line-Control.html">#line</a> macros in
+<code>C</code>.</li>
+<li>We could upstream the &ldquo;ignore unknown macros&rdquo; patch to minimize
+changes to <code>libsyntax</code>.</li>
+<li>It would be nice if we could allow <code>#[path]</code> to reference an environment
+variable. This would be a little cleaner than using <code>include!(...)</code>.</li>
+<li>We need a way to extract macros from a crate.</li>
+</ul>
+
+
+<p>On Cargo&rsquo;s side:</p>
+
+<ul>
+<li>It would be nice if Cargo could be told to use a generated file as the
+<code>main.rs</code>/<code>lib.rs</code>/etc.</li>
+<li><code>Cargo.toml</code> could grow a plugin mechanism to remove the need to write a
+<code>build.rs</code> script.</li>
+</ul>
+
+
+<p>I&rsquo;m sure there&rsquo;s plenty more that needs to get done! So, please help out!</p>
+]]></content>
+  </entry>
+  
+</feed>
