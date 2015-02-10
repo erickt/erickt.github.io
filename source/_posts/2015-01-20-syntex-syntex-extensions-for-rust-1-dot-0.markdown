@@ -208,4 +208,4 @@ On Cargo's side:
 
 I'm sure there's plenty more that needs to get done! So, please help out!
 
-edit: comments on [reddit](https://www.reddit.com/r/rust/comments/2vdyx8/syntex_syntax_extensions_for_rust_10/)
+edit: comments on [reddit](https://www.reddit.com/r/rust/comments/2vdzd1/syntex_syntax_extensions_for_rust_10/)
