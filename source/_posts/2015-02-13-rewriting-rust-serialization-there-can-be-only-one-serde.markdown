@@ -41,7 +41,7 @@ pub trait Serialize {
 ```
 
 (Aside: while I'd rather use `where` here for this type parameter, that would
-force me to write `<V as Visitor>::Value>` do to
+force me to write `<V as Visitor>::Value>` due to
 [#20300](https://github.com/rust-lang/rust/issues/20300)).
 
 This `Visitor` trait then looks like:
