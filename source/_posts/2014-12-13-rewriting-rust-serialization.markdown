@@ -12,10 +12,10 @@ There's been a long digression over the past month
 and
 [don't believe in magic, folks](https://github.com/rust-lang/rust/pull/19574)), but I'm back
 into serialization. Woo! Here's
-[part 1](http://erickt.github.io/blog/2014/10/28/serialization/) and
-[part 2](http://erickt.github.io/blog/2014/11/03/performance/)), Rust's
-[part 2.1](http://erickt.github.io/blog/2014/11/03/performance/)), Rust's
-[part 2.2](http://erickt.github.io/blog/2014/11/03/performance/)) if you need
+[part 1](http://erickt.github.io/blog/2014/10/28/serialization/)
+[part 2](http://erickt.github.io/blog/2014/11/03/performance/),
+[part 2.1](http://erickt.github.io/blog/2014/11/03/performance/), and 
+[part 2.2](http://erickt.github.io/blog/2014/11/03/performance/) if you need
 to catch up.
 
 So `libserialize` has some pretty serious downsides. It's slow, it's got this
