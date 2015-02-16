@@ -5,13 +5,18 @@
 <!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <title>Tilting at Rabbit Holes</title>
+  <title>Chasing Rabbits</title>
   <meta name="author" content="Erick Tryzelaar">
 
   
-  <meta name="description" content="I use and love syntax extensions, and I&rsquo;m planning on using them to simplify
-down how one interacts with a system like
-serde. Unfortunately &hellip;">
+  <meta name="description" content="It&rsquo;s been a while, hasn&rsquo;t it? Here&rsquo;s
+part 1,
+part 2,
+part 2.1,
+part 2.2,
+part 3, and
+part 3.1
+if you want to catch up. Serde &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -23,7 +28,7 @@ serde. Unfortunately &hellip;">
   <link rel="canonical" href="http://erickt.github.io">
   <link href="/favicon.png" rel="icon">
   <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
-  <link href="/atom.xml" rel="alternate" title="Tilting at Rabbit Holes" type="application/atom+xml">
+  <link href="/atom.xml" rel="alternate" title="Chasing Rabbits" type="application/atom+xml">
   <script src="/javascripts/modernizr-2.0.js"></script>
   <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
   <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
@@ -50,7 +55,7 @@ serde. Unfortunately &hellip;">
 
 <body   >
   <header role="banner"><hgroup>
-  <h1><a href="/">Tilting at Rabbit Holes</a></h1>
+  <h1><a href="/">Chasing Rabbits</a></h1>
   
     <h2>A poorly updated blog about what I&#8217;m working on</h2>
   
@@ -79,6 +84,1322 @@ serde. Unfortunately &hellip;">
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/02/13/rewriting-rust-serialization-there-can-be-only-one-serde/">Rewriting Rust Serialization: Part 4: Serde2 Is Ready!</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-02-13T07:32:54-08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>13</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:32 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>It&rsquo;s been a while, hasn&rsquo;t it? Here&rsquo;s
+<a href="http://erickt.github.io/blog/2014/10/28/serialization/">part 1</a>,
+<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2</a>,
+<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2.1</a>,
+<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2.2</a>,
+<a href="http://erickt.github.io/blog/2014/12/13/rewriting-rust-serialization/">part 3</a>, and
+<a href="http://erickt.github.io/blog/2014/12/13/performance-digression/">part 3.1</a>
+if you want to catch up.</p>
+
+<h2>Serde Version 2</h2>
+
+<p>Well it&rsquo;s a long time coming, but serde2 is finally in a mostly usable
+position! If you recall from
+<a href="http://erickt.github.io/blog/2014/12/13/rewriting-rust-serialization/">part 3</a>,
+one of the problems with serde1 is that we&rsquo;re paying a lot for tagging our
+types, and it&rsquo;s really hurting us on the deserialization side of things. So
+there&rsquo;s one other pattern that we can use that allows for lookahead that
+doesn&rsquo;t need tags: visitors. A year or so ago I rewrote our generic hashing
+framework to use the visitor pattern to great success. <code>serde2</code> came out of
+experiments to see if I could do the same thing here. It turned out that it was
+a really elegant approach.</p>
+
+<h3>Serialize</h3>
+
+<p>It all starts with a type that we want to serialize:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">Serialize</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">V</span><span class="o">:</span> <span class="n">Visitor</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span> <span class="n">visitor</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">V</span><span class="o">::</span><span class="n">Value</span><span class="p">,</span> <span class="n">V</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>(Aside: while I&rsquo;d rather use <code>where</code> here for this type parameter, that would
+force me to write <code>&lt;V as Visitor&gt;::Value&gt;</code> do to
+<a href="https://github.com/rust-lang/rust/issues/20300">#20300</a>).</p>
+
+<p>This <code>Visitor</code> trait then looks like:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">Visitor</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">type</span> <span class="n">Value</span><span class="p">;</span>
+</span><span class='line'>    <span class="k">type</span> <span class="n">Error</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit_unit</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Self</span><span class="o">::</span><span class="n">Value</span><span class="p">,</span> <span class="n">Self</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit_named_unit</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">_name</span><span class="o">:</span> <span class="o">&amp;</span><span class="kt">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Self</span><span class="o">::</span><span class="n">Value</span><span class="p">,</span> <span class="n">Self</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">visit_unit</span><span class="p">()</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit_bool</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="kt">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Self</span><span class="o">::</span><span class="n">Value</span><span class="p">,</span> <span class="n">Self</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="p">...</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So the implementation for a <code>bool</code> then looks like:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">impl</span> <span class="n">Serialize</span> <span class="k">for</span> <span class="kt">bool</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">V</span><span class="o">:</span> <span class="n">Visitor</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span> <span class="n">visitor</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">V</span><span class="o">::</span><span class="n">Value</span><span class="p">,</span> <span class="n">V</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">visitor</span><span class="p">.</span><span class="n">visit_bool</span><span class="p">(</span><span class="o">*</span><span class="bp">self</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Things get more interesting when we get to compound structures like a sequence.
+Here&rsquo;s <code>Visitor</code> again. It needs to both be able to visit the overall structure
+as well as each item:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="p">...</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">fn</span> <span class="n">visit_seq</span><span class="o">&lt;</span><span class="n">V</span><span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">visitor</span><span class="o">:</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Self</span><span class="o">::</span><span class="n">Value</span><span class="p">,</span> <span class="n">Self</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="n">where</span> <span class="n">V</span><span class="o">:</span> <span class="n">SeqVisitor</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">fn</span> <span class="n">visit_seq_elt</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span>
+</span><span class='line'>                    <span class="n">first</span><span class="o">:</span> <span class="kt">bool</span><span class="p">,</span>
+</span><span class='line'>                    <span class="n">value</span><span class="o">:</span> <span class="n">T</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Self</span><span class="o">::</span><span class="n">Value</span><span class="p">,</span> <span class="n">Self</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="n">where</span> <span class="n">T</span><span class="o">:</span> <span class="n">Serialize</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="p">...</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>We also have this <code>SeqVisitor</code> trait that the type to serialize provides. It
+really just looks like an <code>Iterator</code>, but the type parameter has been moved to
+the <code>visit</code> method so that it can return different types:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">SeqVisitor</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">V</span><span class="o">:</span> <span class="n">Visitor</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">visitor</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="nb">Option</span><span class="o">&lt;</span><span class="n">V</span><span class="o">::</span><span class="n">Value</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">V</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">size_hint</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">(</span><span class="n">usize</span><span class="p">,</span> <span class="nb">Option</span><span class="o">&lt;</span><span class="n">usize</span><span class="o">&gt;</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>        <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">None</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Finally, to implement this for a type like <code>&amp;[T]</code> we create an
+<code>Iterator</code>-to-<code>SeqVisitor</code> adaptor and pass it to the visitor, which then in
+turn visits each item:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">struct</span> <span class="n">SeqIteratorVisitor</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">iter</span><span class="o">:</span> <span class="n">Iter</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">first</span><span class="o">:</span> <span class="kt">bool</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="n">T</span><span class="p">,</span> <span class="n">Iter</span><span class="o">:</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="n">Item</span><span class="o">=</span><span class="n">T</span><span class="o">&gt;&gt;</span> <span class="n">SeqIteratorVisitor</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">pub</span> <span class="k">fn</span> <span class="n">new</span><span class="p">(</span><span class="n">iter</span><span class="o">:</span> <span class="n">Iter</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SeqIteratorVisitor</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">SeqIteratorVisitor</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">iter</span><span class="o">:</span> <span class="n">iter</span><span class="p">,</span>
+</span><span class='line'>            <span class="n">first</span><span class="o">:</span> <span class="k">true</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span><span class="o">&lt;</span>
+</span><span class='line'>    <span class="n">T</span><span class="o">:</span> <span class="n">Serialize</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">Iter</span><span class="o">:</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="n">Item</span><span class="o">=</span><span class="n">T</span><span class="o">&gt;</span><span class="p">,</span>
+</span><span class='line'><span class="o">&gt;</span> <span class="n">SeqVisitor</span> <span class="k">for</span> <span class="n">SeqIteratorVisitor</span><span class="o">&lt;</span><span class="n">Iter</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">V</span><span class="o">:</span> <span class="n">Visitor</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">visitor</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="nb">Option</span><span class="o">&lt;</span><span class="n">V</span><span class="o">::</span><span class="n">Value</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">V</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">first</span> <span class="o">=</span> <span class="bp">self</span><span class="p">.</span><span class="n">first</span><span class="p">;</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">first</span> <span class="o">=</span> <span class="kc">false</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">match</span> <span class="bp">self</span><span class="p">.</span><span class="n">iter</span><span class="p">.</span><span class="n">next</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nb">Some</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="kd">let</span> <span class="n">value</span> <span class="o">=</span> <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">visitor</span><span class="p">.</span><span class="n">visit_seq_elt</span><span class="p">(</span><span class="n">first</span><span class="p">,</span> <span class="n">value</span><span class="p">));</span>
+</span><span class='line'>                <span class="nb">Ok</span><span class="p">(</span><span class="nb">Some</span><span class="p">(</span><span class="n">value</span><span class="p">))</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>            <span class="nb">None</span> <span class="o">=&gt;</span> <span class="nb">Ok</span><span class="p">(</span><span class="nb">None</span><span class="p">),</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">size_hint</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">(</span><span class="n">usize</span><span class="p">,</span> <span class="nb">Option</span><span class="o">&lt;</span><span class="n">usize</span><span class="o">&gt;</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">iter</span><span class="p">.</span><span class="n">size_hint</span><span class="p">()</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span><span class="o">&lt;</span>
+</span><span class='line'>    <span class="nl">&#39;a</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">T</span><span class="o">:</span> <span class="n">Serialize</span><span class="p">,</span>
+</span><span class='line'><span class="o">&gt;</span> <span class="n">Serialize</span> <span class="k">for</span> <span class="o">&amp;</span><span class="n">&#39;a</span> <span class="p">[</span><span class="n">T</span><span class="p">]</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">V</span><span class="o">:</span> <span class="n">Visitor</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span> <span class="n">visitor</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">V</span><span class="o">::</span><span class="n">Value</span><span class="p">,</span> <span class="n">V</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">visitor</span><span class="p">.</span><span class="n">visit_seq</span><span class="p">(</span><span class="n">SeqIteratorVisitor</span><span class="o">::</span><span class="n">new</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">iter</span><span class="p">()))</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>SeqIteratorVisitor</code> is publically exposed, so it should be easy to use it with
+custom data structures. Maps follow the same pattern (and also expose
+<code>MapIteratorVisitor</code>), but each item instead uses <code>visit_visit_map_elt(first,
+key, value)</code>.  Tuples, struct tuples, and tuple enum variants are all really
+just named sequences. Likewise, structs and struct enum variants are just named
+maps.</p>
+
+<p>Because struct implementations are so common, here&rsquo;s an example how to do it:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">struct</span> <span class="n">Point</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">x</span><span class="o">:</span> <span class="kt">i32</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">y</span><span class="o">:</span> <span class="kt">i32</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">struct</span> <span class="n">PointVisitor</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">state</span><span class="o">:</span> <span class="kt">u32</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">value</span><span class="o">:</span> <span class="o">&amp;</span><span class="n">&#39;a</span> <span class="n">Point</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="o">&gt;</span> <span class="n">MapVisitor</span> <span class="k">for</span> <span class="n">PointVisitor</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">V</span><span class="o">:</span> <span class="n">Visitor</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">visitor</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">V</span><span class="o">::</span><span class="n">Value</span><span class="p">,</span> <span class="n">V</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">match</span> <span class="bp">self</span><span class="p">.</span><span class="n">state</span> <span class="p">{</span>
+</span><span class='line'>            <span class="mi">0</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="bp">self</span><span class="p">.</span><span class="n">state</span> <span class="o">+=</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>                <span class="nb">Ok</span><span class="p">(</span><span class="nb">Some</span><span class="p">(</span><span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">visitor</span><span class="p">.</span><span class="n">visit_map_elt</span><span class="p">(</span><span class="k">true</span><span class="p">,</span> <span class="s">&quot;x&quot;</span><span class="p">,</span> <span class="o">&amp;</span><span class="bp">self</span><span class="p">.</span><span class="n">x</span><span class="p">))))</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>            <span class="mi">1</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="bp">self</span><span class="p">.</span><span class="n">state</span> <span class="o">+=</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>                <span class="nb">Ok</span><span class="p">(</span><span class="nb">Some</span><span class="p">(</span><span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">visitor</span><span class="p">.</span><span class="n">visit_map_elt</span><span class="p">(</span><span class="k">true</span><span class="p">,</span> <span class="s">&quot;y&quot;</span><span class="p">,</span> <span class="o">&amp;</span><span class="bp">self</span><span class="p">.</span><span class="n">y</span><span class="p">))))</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>            <span class="n">_</span> <span class="o">=&gt;</span> <span class="nb">Ok</span><span class="p">(</span><span class="nb">None</span><span class="p">),</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span> <span class="n">Serialize</span> <span class="k">for</span> <span class="n">Point</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">V</span><span class="o">:</span> <span class="n">Visitor</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span> <span class="n">visitor</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">V</span><span class="o">::</span><span class="n">Value</span><span class="p">,</span> <span class="n">V</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">visit_named_map</span><span class="p">(</span><span class="s">&quot;Point&quot;</span><span class="p">,</span> <span class="n">PointVisitor</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">state</span><span class="o">:</span> <span class="mi">0</span><span class="p">,</span>
+</span><span class='line'>            <span class="n">value</span><span class="o">:</span> <span class="bp">self</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">})</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Fortunately <code>serde2</code> also comes with a <code>#[derive_serialize]</code> macro so you don&rsquo;t
+need to write this out by hand if you don&rsquo;t want to.</p>
+
+<h3>Serializer</h3>
+
+<p>Now to actually build a serializer. We start with a trait:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">Serializer</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">type</span> <span class="n">Value</span><span class="p">;</span>
+</span><span class='line'>    <span class="k">type</span> <span class="n">Error</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="o">:</span> <span class="o">&amp;</span><span class="n">T</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Self</span><span class="o">::</span><span class="n">Value</span><span class="p">,</span> <span class="n">Self</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span>
+</span><span class='line'>        <span class="n">where</span> <span class="n">T</span><span class="o">:</span> <span class="n">Serialize</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>It&rsquo;s the responsibility of the serializer to create a visitor and then pass it
+to the type. Oftentimes the serializer also implements <code>Visitor</code>, but it&rsquo;s not
+required. Here&rsquo;s a snippet of the JSON serializer visitor:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">struct</span> <span class="n">Visitor</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="p">,</span> <span class="n">W</span><span class="o">:</span> <span class="nl">&#39;a</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">writer</span><span class="o">:</span> <span class="o">&amp;</span><span class="n">&#39;a</span> <span class="k">mut</span> <span class="n">W</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="p">,</span> <span class="n">W</span><span class="o">:</span> <span class="nb">Writer</span><span class="o">&gt;</span> <span class="n">Visitor</span> <span class="k">for</span> <span class="n">Visitor</span><span class="o">&lt;</span><span class="nl">&#39;a</span><span class="p">,</span> <span class="n">W</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">type</span> <span class="n">Value</span> <span class="o">=</span> <span class="p">();</span>
+</span><span class='line'>    <span class="k">type</span> <span class="n">Error</span> <span class="o">=</span> <span class="n">io</span><span class="o">::</span><span class="n">Error</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit_unit</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">IoResult</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">writer</span><span class="p">.</span><span class="n">write_all</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;null&quot;</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit_bool</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="o">:</span> <span class="kt">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">IoResult</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="n">value</span> <span class="p">{</span>
+</span><span class='line'>            <span class="bp">self</span><span class="p">.</span><span class="n">writer</span><span class="p">.</span><span class="n">write_all</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;true&quot;</span><span class="p">)</span>
+</span><span class='line'>        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>            <span class="bp">self</span><span class="p">.</span><span class="n">writer</span><span class="p">.</span><span class="n">write_all</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;false&quot;</span><span class="p">)</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit_isize</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="o">:</span> <span class="n">isize</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">IoResult</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">write</span><span class="o">!</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">writer</span><span class="p">,</span> <span class="s">&quot;{}&quot;</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="p">...</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit_map</span><span class="o">&lt;</span><span class="n">V</span><span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="k">mut</span> <span class="n">visitor</span><span class="o">:</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">IoResult</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;</span>
+</span><span class='line'>        <span class="n">where</span> <span class="n">V</span><span class="o">:</span> <span class="n">ser</span><span class="o">::</span><span class="n">MapVisitor</span><span class="p">,</span>
+</span><span class='line'>    <span class="p">{</span>
+</span><span class='line'>        <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">writer</span><span class="p">.</span><span class="n">write_all</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;{&quot;</span><span class="p">));</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">while</span> <span class="kd">let</span> <span class="nb">Some</span><span class="p">(())</span> <span class="o">=</span> <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">visitor</span><span class="p">.</span><span class="n">visit</span><span class="p">(</span><span class="bp">self</span><span class="p">))</span> <span class="p">{</span> <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">writer</span><span class="p">.</span><span class="n">write_all</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;}&quot;</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit_map_elt</span><span class="o">&lt;</span><span class="n">K</span><span class="p">,</span> <span class="n">V</span><span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">first</span><span class="o">:</span> <span class="kt">bool</span><span class="p">,</span> <span class="n">key</span><span class="o">:</span> <span class="n">K</span><span class="p">,</span> <span class="n">value</span><span class="o">:</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">IoResult</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;</span>
+</span><span class='line'>        <span class="n">where</span> <span class="n">K</span><span class="o">:</span> <span class="n">ser</span><span class="o">::</span><span class="n">Serialize</span><span class="p">,</span>
+</span><span class='line'>              <span class="n">V</span><span class="o">:</span> <span class="n">ser</span><span class="o">::</span><span class="n">Serialize</span><span class="p">,</span>
+</span><span class='line'>    <span class="p">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">!</span><span class="n">first</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">writer</span><span class="p">.</span><span class="n">write_all</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;,&quot;</span><span class="p">));</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">key</span><span class="p">.</span><span class="n">visit</span><span class="p">(</span><span class="bp">self</span><span class="p">));</span>
+</span><span class='line'>        <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">writer</span><span class="p">.</span><span class="n">write_all</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;:&quot;</span><span class="p">));</span>
+</span><span class='line'>        <span class="n">value</span><span class="p">.</span><span class="n">visit</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Hopefully it is pretty straight forward.</p>
+
+<h2>Deserialization</h2>
+
+<p>Now serialization is the easy part. Deserialization is where it always gets
+more tricky. We follow a similar pattern as serialization. A deserializee
+creates a visitor which accepts any type (most resulting in an error), and
+passes it to a deserializer. This deserializer then extracts it&rsquo;s next value
+from it&rsquo;s stream and passes it to the visitor, which then produces the actual
+type.</p>
+
+<p>It&rsquo;s achingly close to the same pattern between a serializer and a serializee,
+but as hard as I tried, I couldn&rsquo;t unify the two. The error semantics are
+different. In serialization, you want the serializer (which creates the
+visitor) to define the error. In deserialization, you want the deserializer
+which consumes the visitor to define the error.</p>
+
+<p>Let&rsquo;s start first with <code>Error</code>. As opposed to serialization, when we&rsquo;re
+deserializing we can error both in the <code>Deserializer</code> if there is a parse
+error, or in the <code>Deserialize</code> if it&rsquo;s received an unexpected value. We do this
+with an <code>Error</code> trait, which allows a deserializee to generically create the
+few errors it needs:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">Error</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">syntax_error</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Self</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">end_of_stream_error</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Self</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">missing_field_error</span><span class="p">(</span><span class="o">&amp;</span><span class="n">&#39;static</span> <span class="kt">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Self</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Now the <code>Deserialize</code> trait, which looks similar to <code>Serialize</code>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">Deserialize</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">deserialize</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">D</span><span class="o">:</span> <span class="n">Deserializer</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="n">deserializer</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">D</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Self</span><span class="p">,</span> <span class="n">D</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>Visitor</code> also looks like the serialization <code>Visitor</code>, except for the
+methods error by default.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">Visitor</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">type</span> <span class="n">Value</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit_bool</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">E</span><span class="o">:</span> <span class="n">Error</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">_v</span><span class="o">:</span> <span class="kt">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Self</span><span class="o">::</span><span class="n">Value</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="nb">Err</span><span class="p">(</span><span class="n">Error</span><span class="o">::</span><span class="n">syntax_error</span><span class="p">())</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit_isize</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">E</span><span class="o">:</span> <span class="n">Error</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="o">:</span> <span class="n">isize</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Self</span><span class="o">::</span><span class="n">Value</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">visit_i64</span><span class="p">(</span><span class="n">v</span> <span class="k">as</span> <span class="kt">i64</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="p">...</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Sequences and Maps are also a little different:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">Visitor</span> <span class="p">{</span>
+</span><span class='line'>    <span class="p">...</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit_seq</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">V</span><span class="o">:</span> <span class="n">SeqVisitor</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">_visitor</span><span class="o">:</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Self</span><span class="o">::</span><span class="n">Value</span><span class="p">,</span> <span class="n">V</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="nb">Err</span><span class="p">(</span><span class="n">Error</span><span class="o">::</span><span class="n">syntax_error</span><span class="p">())</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit_map</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">V</span><span class="o">:</span> <span class="n">MapVisitor</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">_visitor</span><span class="o">:</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Self</span><span class="o">::</span><span class="n">Value</span><span class="p">,</span> <span class="n">V</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="nb">Err</span><span class="p">(</span><span class="n">Error</span><span class="o">::</span><span class="n">syntax_error</span><span class="p">())</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="p">...</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">SeqVisitor</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">type</span> <span class="n">Error</span><span class="o">:</span> <span class="n">Error</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">T</span><span class="o">:</span> <span class="n">Deserialize</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="nb">Option</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">Self</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">end</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">Self</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">size_hint</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">(</span><span class="n">usize</span><span class="p">,</span> <span class="nb">Option</span><span class="o">&lt;</span><span class="n">usize</span><span class="o">&gt;</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>        <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">None</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">MapVisitor</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">type</span> <span class="n">Error</span><span class="o">:</span> <span class="n">Error</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">K</span><span class="o">:</span> <span class="n">Deserialize</span><span class="p">,</span>
+</span><span class='line'>        <span class="n">V</span><span class="o">:</span> <span class="n">Deserialize</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="nb">Option</span><span class="o">&lt;</span><span class="p">(</span><span class="n">K</span><span class="p">,</span> <span class="n">V</span><span class="p">)</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">Self</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">match</span> <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">visit_key</span><span class="p">())</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nb">Some</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="kd">let</span> <span class="n">value</span> <span class="o">=</span> <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">visit_value</span><span class="p">());</span>
+</span><span class='line'>                <span class="nb">Ok</span><span class="p">(</span><span class="nb">Some</span><span class="p">((</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)))</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>            <span class="nb">None</span> <span class="o">=&gt;</span> <span class="nb">Ok</span><span class="p">(</span><span class="nb">None</span><span class="p">)</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit_key</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">K</span><span class="o">:</span> <span class="n">Deserialize</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="nb">Option</span><span class="o">&lt;</span><span class="n">K</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">Self</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit_value</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">V</span><span class="o">:</span> <span class="n">Deserialize</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">V</span><span class="p">,</span> <span class="n">Self</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">end</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">Self</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">size_hint</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">(</span><span class="n">usize</span><span class="p">,</span> <span class="nb">Option</span><span class="o">&lt;</span><span class="n">usize</span><span class="o">&gt;</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>        <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">None</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Here is an example struct deserializer. Structs are deserialized as a map, but
+since maps are unordered, we need a simple state machine to extract the values.
+In order to get the keys, we just create an enum for the fields, and a custom
+deserializer to convert a string into a field without an allocation:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">struct</span> <span class="n">Point</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">x</span><span class="o">:</span> <span class="kt">i32</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">y</span><span class="o">:</span> <span class="kt">i32</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span> <span class="n">Deserialize</span> <span class="k">for</span> <span class="n">Point</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">deserialize</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">D</span><span class="o">:</span> <span class="n">Deserializer</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="n">deserializer</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">D</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Point</span><span class="p">,</span> <span class="n">D</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">enum</span> <span class="n">Field</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">x</span><span class="p">,</span>
+</span><span class='line'>            <span class="n">y</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">struct</span> <span class="n">FieldVisitor</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">impl</span> <span class="n">Visitor</span> <span class="k">for</span> <span class="n">FieldVisitor</span> <span class="p">{</span>
+</span><span class='line'>            <span class="k">type</span> <span class="n">Value</span> <span class="o">=</span> <span class="n">Field</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="k">fn</span> <span class="n">visit_str</span><span class="o">&lt;</span>
+</span><span class='line'>                <span class="n">E</span><span class="o">:</span> <span class="n">Error</span><span class="p">,</span>
+</span><span class='line'>            <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="o">:</span> <span class="o">&amp;</span><span class="kt">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Field</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="k">match</span> <span class="n">value</span> <span class="p">{</span>
+</span><span class='line'>                    <span class="s">&quot;x&quot;</span> <span class="o">=&gt;</span> <span class="nb">Ok</span><span class="p">(</span><span class="n">Field</span><span class="o">::</span><span class="n">x</span><span class="p">),</span>
+</span><span class='line'>                    <span class="s">&quot;y&quot;</span> <span class="o">=&gt;</span> <span class="nb">Ok</span><span class="p">(</span><span class="n">Field</span><span class="o">::</span><span class="n">y</span><span class="p">),</span>
+</span><span class='line'>                    <span class="n">_</span> <span class="o">=&gt;</span> <span class="nb">Err</span><span class="p">(</span><span class="n">Error</span><span class="o">::</span><span class="n">syntax_error</span><span class="p">()),</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">impl</span> <span class="n">Deserialize</span> <span class="k">for</span> <span class="n">Field</span> <span class="p">{</span>
+</span><span class='line'>            <span class="k">fn</span> <span class="n">deserialize</span><span class="o">&lt;</span>
+</span><span class='line'>                <span class="n">D</span><span class="o">:</span> <span class="n">Deserializer</span><span class="p">,</span>
+</span><span class='line'>            <span class="o">&gt;</span><span class="p">(</span><span class="n">state</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">D</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Field</span><span class="p">,</span> <span class="n">D</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">state</span><span class="p">.</span><span class="n">visit</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">FieldVisitor</span><span class="p">)</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">struct</span> <span class="n">Visitor</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">impl</span> <span class="n">Visitor</span> <span class="k">for</span> <span class="n">Visitor</span> <span class="p">{</span>
+</span><span class='line'>            <span class="k">type</span> <span class="n">Value</span> <span class="o">=</span> <span class="n">Point</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="k">fn</span> <span class="n">visit_map</span><span class="o">&lt;</span>
+</span><span class='line'>                <span class="n">V</span><span class="o">:</span> <span class="n">MapVisitor</span><span class="p">,</span>
+</span><span class='line'>            <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="k">mut</span> <span class="n">visitor</span><span class="o">:</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Point</span><span class="p">,</span> <span class="n">V</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="p">{</span>
+</span><span class='line'>                    <span class="kd">let</span> <span class="k">mut</span> <span class="n">x</span> <span class="o">=</span> <span class="nb">None</span><span class="p">;</span>
+</span><span class='line'>                    <span class="kd">let</span> <span class="k">mut</span> <span class="n">y</span> <span class="o">=</span> <span class="nb">None</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>                    <span class="k">while</span> <span class="kd">let</span> <span class="nb">Some</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="o">=</span> <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">visitor</span><span class="p">.</span><span class="n">visit_key</span><span class="p">())</span> <span class="p">{</span>
+</span><span class='line'>                        <span class="k">match</span> <span class="n">key</span> <span class="p">{</span>
+</span><span class='line'>                            <span class="n">Field</span><span class="o">::</span><span class="n">x</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                                <span class="n">x</span> <span class="o">=</span> <span class="nb">Some</span><span class="p">(</span><span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">visitor</span><span class="p">.</span><span class="n">visit_value</span><span class="p">()));</span>
+</span><span class='line'>                            <span class="p">}</span>
+</span><span class='line'>                            <span class="n">Field</span><span class="o">::</span><span class="n">y</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                                <span class="n">y</span> <span class="o">=</span> <span class="nb">Some</span><span class="p">(</span><span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">visitor</span><span class="p">.</span><span class="n">visit_value</span><span class="p">()));</span>
+</span><span class='line'>                            <span class="p">}</span>
+</span><span class='line'>                        <span class="p">}</span>
+</span><span class='line'>                    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>                    <span class="kd">let</span> <span class="n">x</span> <span class="o">=</span> <span class="k">match</span> <span class="n">x</span> <span class="p">{</span>
+</span><span class='line'>                        <span class="nb">Some</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="n">x</span><span class="p">,</span>
+</span><span class='line'>                        <span class="nb">None</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                            <span class="k">return</span> <span class="nb">Err</span><span class="p">(</span><span class="n">Error</span><span class="o">::</span><span class="n">missing_field_error</span><span class="p">(</span><span class="s">&quot;x&quot;</span><span class="p">));</span>
+</span><span class='line'>                        <span class="p">}</span>
+</span><span class='line'>                    <span class="p">};</span>
+</span><span class='line'>                    <span class="kd">let</span> <span class="n">y</span> <span class="o">=</span> <span class="k">match</span> <span class="n">y</span> <span class="p">{</span>
+</span><span class='line'>                        <span class="nb">Some</span><span class="p">(</span><span class="n">y</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="n">y</span><span class="p">,</span>
+</span><span class='line'>                        <span class="nb">None</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                            <span class="k">return</span> <span class="nb">Err</span><span class="p">(</span><span class="n">Error</span><span class="o">::</span><span class="n">missing_field_error</span><span class="p">(</span><span class="s">&quot;y&quot;</span><span class="p">));</span>
+</span><span class='line'>                        <span class="p">}</span>
+</span><span class='line'>                    <span class="p">};</span>
+</span><span class='line'>
+</span><span class='line'>                    <span class="nb">Ok</span><span class="p">(</span><span class="n">Point</span> <span class="p">{</span>
+</span><span class='line'>                        <span class="n">x</span><span class="o">:</span> <span class="n">x</span><span class="p">,</span>
+</span><span class='line'>                        <span class="n">y</span><span class="o">:</span> <span class="n">y</span><span class="p">,</span>
+</span><span class='line'>                    <span class="p">})</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="k">fn</span> <span class="n">visit_named_map</span><span class="o">&lt;</span>
+</span><span class='line'>                <span class="n">V</span><span class="o">:</span> <span class="n">MapVisitor</span><span class="p">,</span>
+</span><span class='line'>            <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="o">:</span> <span class="o">&amp;</span><span class="kt">str</span><span class="p">,</span> <span class="n">visitor</span><span class="o">:</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Point</span><span class="p">,</span> <span class="n">V</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s">&quot;Point&quot;</span> <span class="p">{</span>
+</span><span class='line'>                    <span class="bp">self</span><span class="p">.</span><span class="n">visit_map</span><span class="p">(</span><span class="n">visitor</span><span class="p">)</span>
+</span><span class='line'>                <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>                    <span class="nb">Err</span><span class="p">(</span><span class="n">Error</span><span class="o">::</span><span class="n">syntax_error</span><span class="p">())</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">deserializer</span><span class="p">.</span><span class="n">visit</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">Visitor</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>It&rsquo;s a little more complicated, but once again there is
+<code>#[derive_deserialize]</code>, which does all this work for you.</p>
+
+<h3>Deserializer</h3>
+
+<p>Deserializers then follow the same pattern as serializers. The one difference
+is that we need to provide a special hook for <code>Option&lt;T&gt;</code> types so formats like
+JSON can treat <code>null</code> types as options.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">trait</span> <span class="n">Deserializer</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">type</span> <span class="n">Error</span><span class="o">:</span> <span class="n">Error</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">V</span><span class="o">:</span> <span class="n">Visitor</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">visitor</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">V</span><span class="o">::</span><span class="n">Value</span><span class="p">,</span> <span class="n">Self</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c-Doc">/// The `visit_option` method allows a `Deserialize` type to inform the</span>
+</span><span class='line'>    <span class="c-Doc">/// `Deserializer` that it&#39;s expecting an optional value. This allows</span>
+</span><span class='line'>    <span class="c-Doc">/// deserializers that encode an optional value as a nullable value to</span>
+</span><span class='line'>    <span class="c-Doc">/// convert the null value into a `None`, and a regular value as</span>
+</span><span class='line'>    <span class="c-Doc">/// `Some(value)`.</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">visit_option</span><span class="o">&lt;</span>
+</span><span class='line'>        <span class="n">V</span><span class="o">:</span> <span class="n">Visitor</span><span class="p">,</span>
+</span><span class='line'>    <span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">visitor</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">V</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">V</span><span class="o">::</span><span class="n">Value</span><span class="p">,</span> <span class="n">Self</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">visit</span><span class="p">(</span><span class="n">visitor</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>Performance</h2>
+
+<p>So how does it perform? Here&rsquo;s the serialization benchmarks, with yet another
+ordering. This time sorted by the performance:</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library                   </th>
+<th> format                 </th>
+<th> serialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> Rust     </td>
+<td> capnproto-rust            </td>
+<td> Cap&#8217;n Proto (unpacked) </td>
+<td> 4226                 </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> go-capnproto              </td>
+<td> Cap&#8217;n Proto            </td>
+<td> 3824.20              </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> bincode                   </td>
+<td> Binary                 </td>
+<td> 1020                 </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> capnproto-rust            </td>
+<td> Cap&#8217;n Proto (packed)   </td>
+<td> 672                  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> gogoprotobuf              </td>
+<td> Protocol Buffers       </td>
+<td> 596.78               </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> rust-msgpack              </td>
+<td> MessagePack            </td>
+<td> 397                  </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>serde2::json</strong> (&amp;[u8])  </td>
+<td> <strong>JSON</strong>               </td>
+<td> <strong>373</strong>              </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> rust-protobuf             </td>
+<td> Protocol Buffers       </td>
+<td> 357                  </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>serde2::json</strong> (Custom) </td>
+<td> <strong>JSON</strong>               </td>
+<td> <strong>314</strong>              </td>
+</tr>
+<tr>
+<td> C++      </td>
+<td> rapidjson                 </td>
+<td> JSON                   </td>
+<td> 304                  </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>serde2::json</strong> (Vec)    </td>
+<td> <strong>JSON</strong>               </td>
+<td> <strong>302</strong>              </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> serde::json (Custom)      </td>
+<td> JSON                   </td>
+<td> 244                  </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> serde::json (&amp;[u8])       </td>
+<td> JSON                   </td>
+<td> 222                  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> goprotobuf                </td>
+<td> Protocol Buffers       </td>
+<td> 214.68               </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> serde::json (Vec)         </td>
+<td> JSON                   </td>
+<td> 149                  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> ffjson                    </td>
+<td> JSON                   </td>
+<td> 147.37               </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> serialize::json           </td>
+<td> JSON                   </td>
+<td> 183                  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> encoding/json             </td>
+<td> JSON                   </td>
+<td> 80.49                </td>
+</tr>
+</tbody>
+</table>
+
+
+<p>I think it&rsquo;s fair to say that on at least this benchmark we&rsquo;ve hit our
+performance numbers. Writing to a preallocated buffer with <code>BufWriter</code> is 15%
+<em>faster</em> than <a href="https://github.com/miloyip/rapidjson">rapidjson</a> (although to be
+fair they are allocating). Our <code>Vec&lt;u8&gt;</code> writer comes in 12% slower. What&rsquo;s
+interesting is this custom Writer. It turns out LLVM is still having trouble
+lowering our generic <code>Vec::push_all</code> into a <code>memcpy</code>. This Writer variant
+however is able to get us to rapidjson&rsquo;s level:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">fn</span> <span class="n">push_all_bytes</span><span class="p">(</span><span class="n">dst</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">Vec</span><span class="o">&lt;</span><span class="kt">u8</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">src</span><span class="o">:</span> <span class="o">&amp;</span><span class="p">[</span><span class="kt">u8</span><span class="p">])</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">dst_len</span> <span class="o">=</span> <span class="n">dst</span><span class="p">.</span><span class="n">len</span><span class="p">();</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">src_len</span> <span class="o">=</span> <span class="n">src</span><span class="p">.</span><span class="n">len</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">dst</span><span class="p">.</span><span class="n">reserve</span><span class="p">(</span><span class="n">src_len</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">unsafe</span> <span class="p">{</span>
+</span><span class='line'>        <span class="c1">// we would have failed if `reserve` overflowed.</span>
+</span><span class='line'>        <span class="n">dst</span><span class="p">.</span><span class="n">set_len</span><span class="p">(</span><span class="n">dst_len</span> <span class="o">+</span> <span class="n">src_len</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="o">::</span><span class="n">std</span><span class="o">::</span><span class="n">ptr</span><span class="o">::</span><span class="n">copy_nonoverlapping_memory</span><span class="p">(</span>
+</span><span class='line'>            <span class="n">dst</span><span class="p">.</span><span class="n">as_mut_ptr</span><span class="p">().</span><span class="n">offset</span><span class="p">(</span><span class="n">dst_len</span> <span class="k">as</span> <span class="n">isize</span><span class="p">),</span>
+</span><span class='line'>            <span class="n">src</span><span class="p">.</span><span class="n">as_ptr</span><span class="p">(),</span>
+</span><span class='line'>            <span class="n">src_len</span><span class="p">);</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">struct</span> <span class="n">MyMemWriter1</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">buf</span><span class="o">:</span> <span class="n">Vec</span><span class="o">&lt;</span><span class="kt">u8</span><span class="o">&gt;</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span> <span class="nb">Writer</span> <span class="k">for</span> <span class="n">MyMemWriter1</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">write_all</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">buf</span><span class="o">:</span> <span class="o">&amp;</span><span class="p">[</span><span class="kt">u8</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">IoResult</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">push_all_bytes</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">.</span><span class="n">buf</span><span class="p">,</span> <span class="n">buf</span><span class="p">);</span>
+</span><span class='line'>        <span class="nb">Ok</span><span class="p">(())</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Deserialization we do much better than serde because we aren&rsquo;t passing around
+all those tags, but we have a ways to catch up to rapidjson. Still, being just 37% <br/>
+slower than the fastest JSON deserializer makes me feel pretty proud.</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library          </th>
+<th> format                  </th>
+<th> deserialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> Rust     </td>
+<td> capnproto-rust   </td>
+<td> Cap&#8217;n Proto (unpacked)  </td>
+<td> 2123                   </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> go-capnproto     </td>
+<td> Cap&#8217;n Proto (zero copy) </td>
+<td> 1407.95                </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> go-capnproto     </td>
+<td> Cap&#8217;n Proto             </td>
+<td> 711.77                 </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> capnproto-rust   </td>
+<td> Cap&#8217;n Proto (packed)    </td>
+<td> 529                    </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> gogoprotobuf     </td>
+<td> Protocol Buffers        </td>
+<td> 272.68                 </td>
+</tr>
+<tr>
+<td> C++      </td>
+<td> rapidjson        </td>
+<td> JSON (sax)              </td>
+<td> 189                    </td>
+</tr>
+<tr>
+<td> C++      </td>
+<td> rapidjson        </td>
+<td> JSON (dom)              </td>
+<td> 162                    </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> bincode          </td>
+<td> Binary                  </td>
+<td> 142                    </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> rust-protobuf    </td>
+<td> Protocol Buffers        </td>
+<td> 141                    </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> rust-msgpack     </td>
+<td> MessagePack             </td>
+<td> 138                    </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>serde2::json</strong> </td>
+<td> <strong>JSON</strong>                </td>
+<td> <strong>122</strong>                </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> ffjson           </td>
+<td> JSON                    </td>
+<td> 95.06                  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> goprotobuf       </td>
+<td> Protocol Buffers        </td>
+<td> 79.78                  </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> serde::json      </td>
+<td> JSON                    </td>
+<td> 67                     </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> serialize::json  </td>
+<td> JSON                    </td>
+<td> 25                     </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> encoding/json    </td>
+<td> JSON                    </td>
+<td> 22.79                  </td>
+</tr>
+</tbody>
+</table>
+
+
+<h2>Conclusion</h2>
+
+<p>What a long trip it&rsquo;s been! I hope you enjoyed it. While there are still
+a few things left to port over from serde1 to serde2 (like the JSON pretty
+printer), and some things probably should be renamed, I&rsquo;m happy with the design
+so I think it&rsquo;s in a place where people can start using it now. Please let me
+know how it goes!</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -410,7 +1731,7 @@ variable. This would be a little cleaner than using <code>include!(...)</code>.<
 
 <p>I&rsquo;m sure there&rsquo;s plenty more that needs to get done! So, please help out!</p>
 
-<p>edit: comments on <a href="https://www.reddit.com/r/rust/comments/2vdyx8/syntex_syntax_extensions_for_rust_10/">reddit</a></p>
+<p>edit: comments on <a href="https://www.reddit.com/r/rust/comments/2vdzd1/syntex_syntax_extensions_for_rust_10/">reddit</a></p>
 </div>
   
   
@@ -819,10 +2140,10 @@ help speed things up.</p>
 and
 <a href="https://github.com/rust-lang/rust/pull/19574">don&rsquo;t believe in magic, folks</a>), but I&rsquo;m back
 into serialization. Woo! Here&rsquo;s
-<a href="http://erickt.github.io/blog/2014/10/28/serialization/">part 1</a> and
-<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2</a>), Rust&rsquo;s
-<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2.1</a>), Rust&rsquo;s
-<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2.2</a>) if you need
+<a href="http://erickt.github.io/blog/2014/10/28/serialization/">part 1</a>
+<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2</a>,
+<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2.1</a>, and
+<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2.2</a> if you need
 to catch up.</p>
 
 <p>So <code>libserialize</code> has some pretty serious downsides. It&rsquo;s slow, it&rsquo;s got this
@@ -5524,268 +6845,6 @@ solution. Next post I&rsquo;ll start getting into the details of the design of
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/10/28/serialization/">Rewriting Rust Serialization, Part 1</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-10-28T08:52:18-07:00'><span class='date'><span class='date-month'>Oct</span> <span class='date-day'>28</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>8:52 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>Hello everybody! It&rsquo;s been, what, <em>two</em> years since I last blogged? Not my best
-performance, I&rsquo;m sorry to say. So for all of my 3 pageviews that are probably
-bots, I appologize for such a long delay on updating my blog. I got to say I&rsquo;ve
-been pretty inspired by the great <a href="http://jvns.ca/">Julia Evans</a> (who I hope we
-can someday get back to working on rust stuff). She&rsquo;s an epic blogger, and I
-hope I can get somewhere near that speed.</p>
-
-<p>Anyway, on to the post. My main on-again-off-again project this past year has
-been working Rust&rsquo;s generic <a href="http://doc.rust-lang.org/serialize/">serialize</a>
-library. If you haven&rsquo;t played with it yet, it&rsquo;s really nifty. It&rsquo;s a generic
-framework that allows a generic <code>Encoder</code> serialize a generic <code>Encodable</code>, and
-the inverse with <code>Decoder</code> and <code>Decodable</code>. This allows you to write just one
-<code>Encodable</code> impl that can transparently work with our
-<a href="http://doc.rust-lang.org/serialize/">json</a> library,
-<a href="https://github.com/mneumann/rust-msgpack">msgpack</a>,
-<a href="https://github.com/alexcrichton/toml-rs">toml</a>, and etc. It&rsquo;s simple to use
-too in most cases as you can use <code>#[deriving(Encodable, Decodable)]</code> to
-automatically create a implementation for your type. Here&rsquo;s an example:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">serialize</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'><span class="kn">use</span> <span class="n">serialize</span><span class="o">::</span><span class="n">json</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'><span class="cp">#[deriving(Encodable, Decodable, Show)]</span>
-</span><span class='line'><span class="k">struct</span> <span class="n">Employee</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">name</span><span class="o">:</span> <span class="n">String</span><span class="p">,</span>
-</span><span class='line'><span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="cp">#[deriving(Encodable, Decodable, Show)]</span>
-</span><span class='line'><span class="k">struct</span> <span class="n">Company</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">employees</span><span class="o">:</span> <span class="n">Vec</span><span class="o">&lt;</span><span class="n">Employee</span><span class="o">&gt;</span><span class="p">,</span>
-</span><span class='line'><span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="k">fn</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
-</span><span class='line'>    <span class="kd">let</span> <span class="n">company</span> <span class="o">=</span> <span class="n">Company</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">employees</span><span class="o">:</span> <span class="n">vec</span><span class="o">!</span><span class="p">[</span>
-</span><span class='line'>            <span class="n">Employee</span> <span class="p">{</span> <span class="n">name</span><span class="o">:</span> <span class="s">&quot;Dan&quot;</span><span class="p">.</span><span class="n">to_string</span><span class="p">()</span> <span class="p">},</span>
-</span><span class='line'>            <span class="n">Employee</span> <span class="p">{</span> <span class="n">name</span><span class="o">:</span> <span class="s">&quot;Erin&quot;</span><span class="p">.</span><span class="n">to_string</span><span class="p">()</span> <span class="p">},</span>
-</span><span class='line'>            <span class="n">Employee</span> <span class="p">{</span> <span class="n">name</span><span class="o">:</span> <span class="s">&quot;Jeff&quot;</span><span class="p">.</span><span class="n">to_string</span><span class="p">()</span> <span class="p">},</span>
-</span><span class='line'>            <span class="n">Employee</span> <span class="p">{</span> <span class="n">name</span><span class="o">:</span> <span class="s">&quot;Spencer&quot;</span><span class="p">.</span><span class="n">to_string</span><span class="p">()</span> <span class="p">},</span>
-</span><span class='line'>        <span class="p">],</span>
-</span><span class='line'>    <span class="p">};</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">let</span> <span class="n">s</span> <span class="o">=</span> <span class="n">json</span><span class="o">::</span><span class="n">encode</span><span class="p">(</span><span class="o">&amp;</span><span class="n">company</span><span class="p">);</span>
-</span><span class='line'>    <span class="kd">let</span> <span class="n">company</span><span class="o">:</span> <span class="n">Company</span> <span class="o">=</span> <span class="n">json</span><span class="o">::</span><span class="n">decode</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">as_slice</span><span class="p">()).</span><span class="n">unwrap</span><span class="p">();</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>There are some downsides to serialize though. Manually implementing can be a
-bit of a pain. Here&rsquo;s the example from before:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="n">S</span><span class="o">:</span> <span class="n">Encoder</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="n">Encodable</span><span class="o">&lt;</span><span class="n">S</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">Employee</span> <span class="p">{</span>
-</span><span class='line'>    <span class="k">fn</span> <span class="n">encode</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span> <span class="n">s</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">S</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
-</span><span class='line'>        <span class="k">match</span> <span class="o">*</span><span class="bp">self</span> <span class="p">{</span>
-</span><span class='line'>            <span class="n">Employee</span> <span class="p">{</span> <span class="n">name</span><span class="o">:</span> <span class="k">ref</span> <span class="n">name</span> <span class="p">}</span> <span class="o">=&gt;</span> <span class="p">{</span>
-</span><span class='line'>                <span class="n">s</span><span class="p">.</span><span class="n">emit_struct</span><span class="p">(</span><span class="s">&quot;Employee&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="k">u</span><span class="p">,</span> <span class="o">|</span><span class="n">s</span><span class="o">|</span> <span class="p">{</span>
-</span><span class='line'>                    <span class="n">s</span><span class="p">.</span><span class="n">emit_struct_field</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="k">u</span><span class="p">,</span> <span class="o">|</span><span class="n">s</span><span class="o">|</span> <span class="n">name</span><span class="p">.</span><span class="n">encode</span><span class="p">(</span><span class="n">s</span><span class="p">))</span>
-</span><span class='line'>                <span class="p">})</span>
-</span><span class='line'>            <span class="p">}</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'><span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="k">impl</span><span class="o">&lt;</span><span class="n">D</span><span class="o">:</span> <span class="n">Decoder</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="n">Decodable</span><span class="o">&lt;</span><span class="n">D</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="k">for</span> <span class="n">Employee</span> <span class="p">{</span>
-</span><span class='line'>    <span class="k">fn</span> <span class="n">decode</span><span class="p">(</span><span class="n">d</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">D</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Employee</span><span class="p">,</span> <span class="n">E</span><span class="o">&gt;</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">d</span><span class="p">.</span><span class="n">read_struct</span><span class="p">(</span><span class="s">&quot;Employee&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="k">u</span><span class="p">,</span> <span class="o">|</span><span class="n">d</span><span class="o">|</span> <span class="p">{</span>
-</span><span class='line'>            <span class="nb">Ok</span><span class="p">(</span><span class="n">Employee</span> <span class="p">{</span>
-</span><span class='line'>                <span class="n">name</span><span class="o">:</span> <span class="p">{</span>
-</span><span class='line'>                    <span class="n">try</span><span class="o">!</span><span class="p">(</span><span class="n">d</span><span class="p">.</span><span class="n">read_struct_field</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="k">u</span><span class="p">,</span> <span class="o">|</span><span class="n">d</span><span class="o">|</span> <span class="p">{</span>
-</span><span class='line'>                        <span class="n">Decodable</span><span class="o">::</span><span class="n">decode</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
-</span><span class='line'>                    <span class="p">}))</span>
-</span><span class='line'>                <span class="p">}</span>
-</span><span class='line'>            <span class="p">})</span>
-</span><span class='line'>        <span class="p">})</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>As you can see, parsing compound structures requires these recursive closure
-calls in order to perform the handshake between the <code>Encoder</code> and the
-<code>Encodable</code>. A couple people have run into bugs in the past where they didn&rsquo;t
-implement this pattern, which results in some confusing bugs. Furthermore, LLVM
-isn&rsquo;t great at inlining these recursive calls, so <code>serialize</code> impls tend to not
-perform well.</p>
-
-<p>That&rsquo;s not the worst of it though. The real problem is that there are types
-that can implement <code>Encodable</code>, there&rsquo;s no way to write a <code>Decodable</code>
-implementation. They&rsquo;re pretty common too. For example, the
-<code>serialize::json::Json</code> type:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">pub</span> <span class="k">enum</span> <span class="n">Json</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">I64</span><span class="p">(</span><span class="kt">i64</span><span class="p">),</span>
-</span><span class='line'>    <span class="n">U64</span><span class="p">(</span><span class="kt">u64</span><span class="p">),</span>
-</span><span class='line'>    <span class="n">F64</span><span class="p">(</span><span class="kt">f64</span><span class="p">),</span>
-</span><span class='line'>    <span class="n">String</span><span class="p">(</span><span class="n">string</span><span class="o">::</span><span class="n">String</span><span class="p">),</span>
-</span><span class='line'>    <span class="n">Boolean</span><span class="p">(</span><span class="kt">bool</span><span class="p">),</span>
-</span><span class='line'>    <span class="n">List</span><span class="p">(</span><span class="n">JsonList</span><span class="p">),</span>
-</span><span class='line'>    <span class="n">Object</span><span class="p">(</span><span class="n">JsonObject</span><span class="p">),</span>
-</span><span class='line'>    <span class="n">Null</span><span class="p">,</span>
-</span><span class='line'><span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="k">pub</span> <span class="k">type</span> <span class="n">JsonList</span> <span class="o">=</span> <span class="n">Vec</span><span class="o">&lt;</span><span class="n">Json</span><span class="o">&gt;</span><span class="p">;</span>
-</span><span class='line'><span class="k">pub</span> <span class="k">type</span> <span class="n">JsonObject</span> <span class="o">=</span> <span class="n">TreeMap</span><span class="o">&lt;</span><span class="n">string</span><span class="o">::</span><span class="n">String</span><span class="p">,</span> <span class="n">Json</span><span class="o">&gt;</span><span class="p">;</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>The <code>Json</code> value can represent any value that&rsquo;s in a JSON string. Implied in
-this is the notion that the <code>Decodable</code> has to look ahead to see what the next
-value is so it can decide which <code>Json</code> variant to construct. Unfortunately our
-current <code>Decoder</code> infrastructure doesn&rsquo;t support lookahead. The way the
-<code>Decoder</code>/<code>Decodable</code> handshake works is essentially:</p>
-
-<ul>
-<li><code>Decodable</code> asks for a struct named <code>"Employee"</code>.</li>
-<li><code>Decodable</code> asks for a field named <code>"name"</code>.</li>
-<li><code>Decodable</code> asks for a value of type <code>String</code>.</li>
-<li><code>Decodable</code> asks for a field named <code>"age"</code>.</li>
-<li><code>Decodable</code> asks for a value of type <code>uint</code>.</li>
-<li>&hellip;</li>
-</ul>
-
-
-<p>Any deviation from this pattern results in an error. There isn&rsquo;t a way for the
-<code>Decodable</code> to ask what is the type of the next value, so this is why we
-serialize generic enums by explicitly tagging the variant, as in:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">serialize</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'><span class="kn">use</span> <span class="n">serialize</span><span class="o">::</span><span class="n">json</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'><span class="cp">#[deriving(Encodable, Decodable, Show)]</span>
-</span><span class='line'><span class="k">enum</span> <span class="n">Animal</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">Dog</span><span class="p">(</span><span class="kt">uint</span><span class="p">),</span>
-</span><span class='line'>    <span class="n">Frog</span><span class="p">(</span><span class="n">String</span><span class="p">,</span> <span class="kt">uint</span><span class="p">),</span>
-</span><span class='line'><span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="k">fn</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
-</span><span class='line'>    <span class="kd">let</span> <span class="n">animal</span> <span class="o">=</span> <span class="n">Frog</span><span class="p">(</span><span class="s">&quot;Frank&quot;</span><span class="p">.</span><span class="n">to_string</span><span class="p">(),</span> <span class="mi">349</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">let</span> <span class="n">s</span> <span class="o">=</span> <span class="n">json</span><span class="o">::</span><span class="n">encode</span><span class="p">(</span><span class="o">&amp;</span><span class="n">animal</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="nb">println</span><span class="o">!</span><span class="p">(</span><span class="s">&quot;{}&quot;</span><span class="p">,</span> <span class="n">s</span><span class="p">);</span>
-</span><span class='line'>    <span class="c1">// prints {&quot;variant&quot;:&quot;Frog&quot;,&quot;fields&quot;:[&quot;Frank&quot;,349]}</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>That&rsquo;s probably good enough for now. In my next post I&rsquo;ll go into in my
-approach to fix this in <a href="https://github.com/erickt/rust-serde">serde</a>.</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/2">&larr; Older</a>
@@ -5801,6 +6860,10 @@ approach to fix this in <a href="https://github.com/erickt/rust-serde">serde</a>
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/02/13/rewriting-rust-serialization-there-can-be-only-one-serde/">Rewriting Rust Serialization: Part 4: Serde2 Is Ready!</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/02/09/syntex-syntex-extensions-for-rust-1-dot-0/">Syntex: Syntax Extensions for Rust 1.0</a>
       </li>
     
@@ -5814,10 +6877,6 @@ approach to fix this in <a href="https://github.com/erickt/rust-serde">serde</a>
     
       <li class="post">
         <a href="/blog/2014/12/13/rust-and-mdbm/">Using Rust to Make a Safer Interface for Yahoo&#8217;s Fast MDBM Database</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2014/11/22/benchmarking-is-confusing/">Benchmarking Is Confusing in Low Level Rust</a>
       </li>
     
   </ul>

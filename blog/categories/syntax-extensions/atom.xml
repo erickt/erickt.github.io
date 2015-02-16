@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: Syntax Extensions | Tilting at Rabbit Holes]]></title>
+  <title><![CDATA[Category: Syntax Extensions | Chasing Rabbits]]></title>
   <link href="http://erickt.github.io/blog/categories/syntax-extensions/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2015-02-09T21:16:21-08:00</updated>
+  <updated>2015-02-16T08:40:53-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -217,7 +217,7 @@ variable. This would be a little cleaner than using <code>include!(...)</code>.<
 
 <p>I&rsquo;m sure there&rsquo;s plenty more that needs to get done! So, please help out!</p>
 
-<p>edit: comments on <a href="https://www.reddit.com/r/rust/comments/2vdyx8/syntex_syntax_extensions_for_rust_10/">reddit</a></p>
+<p>edit: comments on <a href="https://www.reddit.com/r/rust/comments/2vdzd1/syntex_syntax_extensions_for_rust_10/">reddit</a></p>
 ]]></content>
   </entry>
   

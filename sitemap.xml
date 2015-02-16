@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd" xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
+    <loc>http://erickt.github.io/blog/2015/02/13/rewriting-rust-serialization-there-can-be-only-one-serde/</loc>
+    <lastmod>2015-02-13T07:32:54-08:00</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
     <loc>http://erickt.github.io/blog/2015/02/09/syntex-syntex-extensions-for-rust-1-dot-0/</loc>
     <lastmod>2015-02-09T19:37:32-08:00</lastmod>
     <priority>0.8</priority>
@@ -62,13 +67,13 @@
   </url>
   <url>
     <loc>http://erickt.github.io/blog/archives/</loc>
-    <lastmod>2015-02-09T21:16:21-08:00</lastmod>
+    <lastmod>2015-02-16T08:40:53-08:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>http://erickt.github.io/</loc>
-    <lastmod>2015-02-09T21:16:21-08:00</lastmod>
+    <lastmod>2015-02-16T08:40:53-08:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
