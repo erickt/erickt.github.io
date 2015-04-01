@@ -1,0 +1,68 @@
+---
+layout: post
+title: "serde 0.3"
+date: 2015-03-31 19:57:37 -0700
+comments: true
+categories: [rust, serialization, serde]
+---
+
+I'm happy to announce that I've released
+[serde](https://github.com/erickt/rust-serde) 0.3 on
+[crates.io](https://crates.io/crates/serde) today.  For those unfamiliar with
+serde, it's a generic serialization framework, much like
+[rustc-serialize](https://github.com/rust-lang/rustc-serialize/), but much more
+powerful. Check out my [serialization series](http://erickt.github.io/blog/categories/serialization/)
+if you're interested in serde's original development.
+
+There's been a ton of work since 0.2. Here are the highlights:
+
+* Ported over from std::old\_io to std::io. There is a bit of a performance hit
+when serializing to `&mut [u8]`, although it's really not that bad. In my goser
+benchmarks, previously it ran in 373 MB/s, but now it's running at 260 MB/s.
+However, this hasn't impacted the `Vec<u8>` serialization performance, nor
+deserialization performance.
+
+* Much better JSON deserialization errors. Now `std::io::Error` is properly
+propogated, and error locations are reported when a `Deserialize` raises an error.
+
+* Merged `serde::ser::Serializer` and `serde::ser::Visitor`.
+
+* Renamed `serde::ser::Serialize::visit` to `serde::ser::Serialize::serialize`.
+
+* Replaced `serde::ser::{Seq,Map}Visitor::size_hint` with a `len()` method that
+returns an optional length. This has a little stronger emphasis that we either
+need an exactly length or no length. Formats that need an exact length should
+make sure to verify the length passed in matches the actual amount of values
+serialized.
+
+* `serde::json` now deserializes missing values as a `()`.
+
+* Finished implementing `#[derive(Serialize, Deserialize)]` for all struct and
+enum forms.
+
+* Ported `serde_macros` over to [aster](https://github.com/erickt/rust-aster)
+and [quasi](https://github.com/erickt/rust-quasi), which simplies code
+generation.
+
+* Removed the unnessary `first` argument from `visit_{seq,map}_elt`.
+
+* Rewrote enum deserializations to not require allocations. Oddly enough this
+is a tad slower than the allocation form. I suspect it's coming from the
+function calls not getting inlined away.
+
+* Allowed enum serialization and deserialization to support more than one
+  variant.
+
+* Allowed `Deserialize` types to hint that it's expecting a sequence or a map.
+
+* Allowed maps to be deserialized from a `()`.
+
+* Added a `serde::bytes::{Bytes,ByteBuf}`, which wrap `&[u8]`/`Vec<u8>` to allow
+some formats to encode these values more efficiently than generic sequences.
+
+* Added `serde::de::value`, which contains some helper deserializers to
+deserialize from a Rust type.
+
+* Added impls for most collection types in the standard library.
+
+Thanks everyone that's helped out with this release!
