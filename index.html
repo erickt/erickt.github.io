@@ -9,14 +9,10 @@
   <meta name="author" content="Erick Tryzelaar">
 
   
-  <meta name="description" content="It&rsquo;s been a while, hasn&rsquo;t it? Here&rsquo;s
-part 1,
-part 2,
-part 2.1,
-part 2.2,
-part 3, and
-part 3.1
-if you want to catch up. Serde &hellip;">
+  <meta name="description" content="I&rsquo;m happy to announce that I&rsquo;ve released
+serde 0.3 on
+crates.io today. For those unfamiliar with
+serde, it&rsquo;s a generic &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -90,7 +86,7 @@ if you want to catch up. Serde &hellip;">
       
   <header>
     
-      <h1 class="entry-title"><a href="/blog/2015/02/13/rewriting-rust-serialization-there-can-be-only-one-serde/">Rewriting Rust Serialization: Part 4: Serde2 Is Ready!</a></h1>
+      <h1 class="entry-title"><a href="/blog/2015/03/31/serde-0-dot-3/">Serde 0.3</a></h1>
     
     
       <p class="meta">
@@ -99,7 +95,83 @@ if you want to catch up. Serde &hellip;">
 
 
 
-<time class='entry-date' datetime='2015-02-13T07:32:54-08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>13</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:32 am</span></time>
+<time class='entry-date' datetime='2015-03-31T19:57:37-07:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>31</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>7:57 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>I&rsquo;m happy to announce that I&rsquo;ve released
+<a href="https://github.com/erickt/rust-serde">serde</a> 0.3 on
+<a href="https://crates.io/crates/serde">crates.io</a> today.  For those unfamiliar with
+serde, it&rsquo;s a generic serialization framework, much like
+<a href="https://github.com/rust-lang/rustc-serialize/">rustc-serialize</a>, but much more
+powerful. Check out my <a href="http://erickt.github.io/blog/categories/serialization/">serialization series</a>
+if you&rsquo;re interested in serde&rsquo;s original development.</p>
+
+<p>There&rsquo;s been a ton of work since 0.2. Here are the highlights:</p>
+
+<ul>
+<li><p>Ported over from std::old_io to std::io. There is a bit of a performance hit
+when serializing to <code>&amp;mut [u8]</code>, although it&rsquo;s really not that bad. In my goser
+benchmarks, previously it ran in 373 MB/s, but now it&rsquo;s running at 260 MB/s.
+However, this hasn&rsquo;t impacted the <code>Vec&lt;u8&gt;</code> serialization performance, nor
+deserialization performance.</p></li>
+<li><p>Much better JSON deserialization errors. Now <code>std::io::Error</code> is properly
+propogated, and error locations are reported when a <code>Deserialize</code> raises an error.</p></li>
+<li><p>Merged <code>serde::ser::Serializer</code> and <code>serde::ser::Visitor</code>.</p></li>
+<li><p>Renamed <code>serde::ser::Serialize::visit</code> to <code>serde::ser::Serialize::serialize</code>.</p></li>
+<li><p>Replaced <code>serde::ser::{Seq,Map}Visitor::size_hint</code> with a <code>len()</code> method that
+returns an optional length. This has a little stronger emphasis that we either
+need an exactly length or no length. Formats that need an exact length should
+make sure to verify the length passed in matches the actual amount of values
+serialized.</p></li>
+<li><p><code>serde::json</code> now deserializes missing values as a <code>()</code>.</p></li>
+<li><p>Finished implementing <code>#[derive(Serialize, Deserialize)]</code> for all struct and
+enum forms.</p></li>
+<li><p>Ported <code>serde_macros</code> over to <a href="https://github.com/erickt/rust-aster">aster</a>
+and <a href="https://github.com/erickt/rust-quasi">quasi</a>, which simplies code
+generation.</p></li>
+<li><p>Removed the unnessary <code>first</code> argument from <code>visit_{seq,map}_elt</code>.</p></li>
+<li><p>Rewrote enum deserializations to not require allocations. Oddly enough this
+is a tad slower than the allocation form. I suspect it&rsquo;s coming from the
+function calls not getting inlined away.</p></li>
+<li><p>Allowed enum serialization and deserialization to support more than one
+variant.</p></li>
+<li><p>Allowed <code>Deserialize</code> types to hint that it&rsquo;s expecting a sequence or a map.</p></li>
+<li><p>Allowed maps to be deserialized from a <code>()</code>.</p></li>
+<li><p>Added a <code>serde::bytes::{Bytes,ByteBuf}</code>, which wrap <code>&amp;[u8]</code>/<code>Vec&lt;u8&gt;</code> to allow
+some formats to encode these values more efficiently than generic sequences.</p></li>
+<li><p>Added <code>serde::de::value</code>, which contains some helper deserializers to
+deserialize from a Rust type.</p></li>
+<li><p>Added impls for most collection types in the standard library.</p></li>
+</ul>
+
+
+<p>Thanks everyone that&rsquo;s helped out with this release!</p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/02/16/rewriting-rust-serialization-there-can-be-only-one-serde/">Rewriting Rust Serialization: Part 4: Serde2 Is Ready!</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-02-16T07:32:54-08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:32 am</span></time>
         
       </p>
     
@@ -146,7 +218,7 @@ a really elegant approach.</p>
 
 
 <p>(Aside: while I&rsquo;d rather use <code>where</code> here for this type parameter, that would
-force me to write <code>&lt;V as Visitor&gt;::Value&gt;</code> do to
+force me to write <code>&lt;V as Visitor&gt;::Value&gt;</code> due to
 <a href="https://github.com/rust-lang/rust/issues/20300">#20300</a>).</p>
 
 <p>This <code>Visitor</code> trait then looks like:</p>
@@ -1143,22 +1215,22 @@ ordering. This time sorted by the performance:</p>
 <td> 357                  </td>
 </tr>
 <tr>
-<td> <strong>Rust</strong> </td>
-<td> <strong>serde2::json</strong> (Custom) </td>
-<td> <strong>JSON</strong>               </td>
-<td> <strong>314</strong>              </td>
-</tr>
-<tr>
 <td> C++      </td>
 <td> rapidjson                 </td>
 <td> JSON                   </td>
-<td> 304                  </td>
+<td> 316                  </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>serde2::json</strong> (Custom) </td>
+<td> <strong>JSON</strong>               </td>
+<td> <strong>306</strong>              </td>
 </tr>
 <tr>
 <td> <strong>Rust</strong> </td>
 <td> <strong>serde2::json</strong> (Vec)    </td>
 <td> <strong>JSON</strong>               </td>
-<td> <strong>302</strong>              </td>
+<td> <strong>288</strong>              </td>
 </tr>
 <tr>
 <td> Rust     </td>
@@ -1207,7 +1279,7 @@ ordering. This time sorted by the performance:</p>
 
 
 <p>I think it&rsquo;s fair to say that on at least this benchmark we&rsquo;ve hit our
-performance numbers. Writing to a preallocated buffer with <code>BufWriter</code> is 15%
+performance numbers. Writing to a preallocated buffer with <code>BufWriter</code> is 18%
 <em>faster</em> than <a href="https://github.com/miloyip/rapidjson">rapidjson</a> (although to be
 fair they are allocating). Our <code>Vec&lt;u8&gt;</code> writer comes in 12% slower. What&rsquo;s
 interesting is this custom Writer. It turns out LLVM is still having trouble
@@ -1274,7 +1346,7 @@ however is able to get us to rapidjson&rsquo;s level:</p>
 
 
 <p>Deserialization we do much better than serde because we aren&rsquo;t passing around
-all those tags, but we have a ways to catch up to rapidjson. Still, being just 37% <br/>
+all those tags, but we have a ways to catch up to rapidjson. Still, being just 37%
 slower than the fastest JSON deserializer makes me feel pretty proud.</p>
 
 <table>
@@ -6676,175 +6748,6 @@ from the last post.</p>
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/11/03/performance/">Rewriting Rust Serialization, Part 2: Performance</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-11-03T06:38:38-08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2014</span></span> <span class='time'>6:38 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>As I said in the <a href="http://erickt.github.io/blog/2014/10/28/serialization/">last post</a>,
-Rust&rsquo;s <code>serialize</code> library, specifically <code>serialize::json</code> is pretty slow.
-Back when I started this project a number of months ago, I wanted to benchmark
-to see how we compared to some other languages. There are a bunch of JSON
-benchmarks, but the one I chose was Cloudflare&rsquo;s Go language.
-<a href="https://github.com/cloudflare/goser">Goser</a>, mainly because it was using a
-complex real world log structure, and they did the hard work of implementing
-benchmarks for <a href="http://golang.org/pkg/encoding/json">encoding/json</a>,
-<a href="http://code.google.com/p/goprotobuf/">goprotobuf</a>,
-<a href="http://code.google.com/p/gogoprotobuf/">gogoprotobuf</a>, and
-<a href="https://github.com/glycerine/go-capnproto">go-capnproto</a>. I also included the
-Go <a href="https://github.com/pquerna/ffjson">ffjson</a> and C++
-<a href="https://github.com/erickt/rapidjson/blob/master/log.cc">rapidjson</a>, which
-both claim to be the fastest JSON libraries for those languages. Here are the
-results I got:</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library             </th>
-<th> format           </th>
-<th> serialization (MB/s) </th>
-<th> deserialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> C++      </td>
-<td> rapidjson           </td>
-<td> JSON             </td>
-<td> 294                  </td>
-<td> 164 (DOM) / 192 (SAX)  </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> encoding/json       </td>
-<td> JSON             </td>
-<td> 71.47                </td>
-<td> 25.09                  </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> ffjson              </td>
-<td> JSON             </td>
-<td> 156.67               </td>
-<td> (not supported)        </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> goprotobuf          </td>
-<td> Protocol Buffers </td>
-<td> 148.78               </td>
-<td> 99.57                  </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> gogoprotobuf        </td>
-<td> Protocol Buffers </td>
-<td> 519.48               </td>
-<td> 319.40                 </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto        </td>
-<td> Cap&#8217;n Proto      </td>
-<td> 3419.54              </td>
-<td> 665.35                 </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> serialize::json     </td>
-<td> JSON             </td>
-<td> 40-ish               </td>
-<td> 10-ish                 </td>
-</tr>
-</tbody>
-</table>
-
-
-<p>Notes:</p>
-
-<ul>
-<li><code>rapidjson</code> supports both DOM-style and SAX-style deserializing. DOM-style
-means deserializing into a generic object, then from there into the final
-object, SAX-style means a callback approach where a callback handler is
-called for each JSON token.</li>
-<li>Go&rsquo;s <code>encoding/json</code> uses reflection to serialize arbitrary values. <code>ffjson</code>
-uses code generation to get it&rsquo;s serialization sped, but it doesn&rsquo;t implement
-deserialization.</li>
-<li>both <code>goprotobuf</code> and <code>gogoprotobuf</code> use code generation, but gogoprotobuf
-uses Protocol Buffer&rsquo;s extension support to do cheaper serialization.</li>
-<li>Cap&#8217;n Proto doesn&rsquo;t really do serialization, but lays the serialized data out
-just like it is in memory so it has nearly zero serialization speed.</li>
-<li>The Rust numbers are from a couple months ago and I couldn&rsquo;t track down
-the exact numbers.</li>
-</ul>
-
-
-<p>So. Yikes. Not only are we no where near <code>rapidjson</code>, we were being soundly
-beaten by Go&rsquo;s reflection-based framework <code>encoding/json</code>.  Even worse, our
-compile time was at least 10 times theirs. So, not pretty at all.</p>
-
-<p>But that was a couple months ago. Between then and now, Patrick Walton, Luqman
-Aden, myself, and probably lots others found and fixed a number of bugs across
-<code>serialize::json</code>, <code>std::io</code>, generic function calls, and more. All this work
-got us to more than double our performance:</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library           </th>
-<th> format               </th>
-<th> serialization (MB/s)   </th>
-<th> deserialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> Rust     </td>
-<td> serialize::json   </td>
-<td> JSON                 </td>
-<td> 117                    </td>
-<td> 25                     </td>
-</tr>
-</tbody>
-</table>
-
-
-<p>We&rsquo;re (kind of) beating Go! At least the builtin reflection-based solution.
-Better, but not great. I think our challenge is those dang closures. While LLVM
-can optimize simple closures, it seems to have a lot of trouble with all these
-recursive closure calls. While having finished unboxed closures might finally
-let us break through this performance bottleneck, it&rsquo;s not guaranteed.</p>
-
-<p>All in all, this, and the representational problems from
-<a href="http://erickt.github.io/blog/2014/10/28/serialization/">post 1</a> make it pretty
-obvious we got some fundamental issues here and we need to use an alternative
-solution. Next post I&rsquo;ll start getting into the details of the design of
-<a href="https://github.com/erickt/rust-serde">serde</a>.</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/2">&larr; Older</a>
@@ -6860,7 +6763,11 @@ solution. Next post I&rsquo;ll start getting into the details of the design of
   <ul id="recent_posts">
     
       <li class="post">
-        <a href="/blog/2015/02/13/rewriting-rust-serialization-there-can-be-only-one-serde/">Rewriting Rust Serialization: Part 4: Serde2 Is Ready!</a>
+        <a href="/blog/2015/03/31/serde-0-dot-3/">Serde 0.3</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/02/16/rewriting-rust-serialization-there-can-be-only-one-serde/">Rewriting Rust Serialization: Part 4: Serde2 Is Ready!</a>
       </li>
     
       <li class="post">
@@ -6873,10 +6780,6 @@ solution. Next post I&rsquo;ll start getting into the details of the design of
     
       <li class="post">
         <a href="/blog/2014/12/13/rewriting-rust-serialization/">Rewriting Rust Serialization, Part 3: Introducing Serde</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2014/12/13/rust-and-mdbm/">Using Rust to Make a Safer Interface for Yahoo&#8217;s Fast MDBM Database</a>
       </li>
     
   </ul>

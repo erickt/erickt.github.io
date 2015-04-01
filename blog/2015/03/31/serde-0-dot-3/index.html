@@ -5,13 +5,14 @@
 <!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <title>Rewriting Rust Serialization, Part 2.1: Benchmarks - Chasing Rabbits</title>
+  <title>Serde 0.3 - Chasing Rabbits</title>
   <meta name="author" content="Erick Tryzelaar">
 
   
-  <meta name="description" content="After part 2 I received
-a couple requests to add in a couple other rust serialization libraries. So one
-thing led to another, and now I&rsquo;ve got &hellip;">
+  <meta name="description" content="I&rsquo;m happy to announce that I&rsquo;ve released
+serde 0.3 on
+crates.io today. For those unfamiliar with
+serde, it&rsquo;s a generic &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -20,7 +21,7 @@ thing led to another, and now I&rsquo;ve got &hellip;">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   
-  <link rel="canonical" href="http://erickt.github.io/blog/2014/11/11/benchmarks">
+  <link rel="canonical" href="http://erickt.github.io/blog/2015/03/31/serde-0-dot-3">
   <link href="/favicon.png" rel="icon">
   <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
   <link href="/atom.xml" rel="alternate" title="Chasing Rabbits" type="application/atom+xml">
@@ -82,7 +83,7 @@ thing led to another, and now I&rsquo;ve got &hellip;">
   
   <header>
     
-      <h1 class="entry-title">Rewriting Rust Serialization, Part 2.1: Benchmarks</h1>
+      <h1 class="entry-title">Serde 0.3</h1>
     
     
       <p class="meta">
@@ -91,130 +92,61 @@ thing led to another, and now I&rsquo;ve got &hellip;">
 
 
 
-<time class='entry-date' datetime='2014-11-11T08:11:34-08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>11</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>8:11 am</span></time>
+<time class='entry-date' datetime='2015-03-31T19:57:37-07:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>31</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>7:57 pm</span></time>
         
       </p>
     
   </header>
 
 
-<div class="entry-content"><p>After <a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2</a> I received
-a couple requests to add in a couple other rust serialization libraries. So one
-thing led to another, and now I&rsquo;ve got a benchmark suite I&rsquo;m calling
-<a href="https://github.com/erickt/rust-serialization-benchmarks">rust-serialization-benchmarks</a>.
-Really creative name, eh? This includes all the other benchmarks I referred to
-previously, as well as <a href="https://github.com/dwrensha/capnproto-rust">capnproto</a>,
-<a href="https://github.com/mneumann/rust-msgpack">msgpack</a>, and
-<a href="https://github.com/stepancheg/rust-protobuf">protobuf</a>.</p>
+<div class="entry-content"><p>I&rsquo;m happy to announce that I&rsquo;ve released
+<a href="https://github.com/erickt/rust-serde">serde</a> 0.3 on
+<a href="https://crates.io/crates/serde">crates.io</a> today.  For those unfamiliar with
+serde, it&rsquo;s a generic serialization framework, much like
+<a href="https://github.com/rust-lang/rustc-serialize/">rustc-serialize</a>, but much more
+powerful. Check out my <a href="http://erickt.github.io/blog/categories/serialization/">serialization series</a>
+if you&rsquo;re interested in serde&rsquo;s original development.</p>
 
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library             </th>
-<th> format                  </th>
-<th> serialization (MB/s) </th>
-<th> deserialization (MB/s)   </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> C++      </td>
-<td> rapidjson           </td>
-<td> JSON (dom)              </td>
-<td> 233                  </td>
-<td> 102                      </td>
-</tr>
-<tr>
-<td> C++      </td>
-<td> rapidjson           </td>
-<td> JSON (sax)              </td>
-<td> 233                  </td>
-<td> 124                      </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> encoding/json       </td>
-<td> JSON                    </td>
-<td> 54.93                </td>
-<td> 16.72                    </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> ffjson              </td>
-<td> JSON                    </td>
-<td> 126.40               </td>
-<td> (not supported)          </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> goprotobuf          </td>
-<td> Protocol Buffers        </td>
-<td> 138.27               </td>
-<td> 91.18                    </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> gogoprotobuf        </td>
-<td> Protocol Buffers        </td>
-<td> 472.69               </td>
-<td> 295.33                   </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto        </td>
-<td> Cap&#8217;n Proto             </td>
-<td> 2226.71              </td>
-<td> 450                      </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto        </td>
-<td> Cap&#8217;n Proto (zero copy) </td>
-<td> 2226.71              </td>
-<td> 1393.3                   </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> serialize::json     </td>
-<td> JSON                    </td>
-<td> 89                   </td>
-<td> 18                       </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> rust-msgpack        </td>
-<td> MessagePack             </td>
-<td> 160                  </td>
-<td> 52                       </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> rust-protobuf       </td>
-<td> Protocol Buffers        </td>
-<td> 177                  </td>
-<td> 70                       </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust      </td>
-<td> Cap&#8217;n Proto (unpacked)  </td>
-<td> 1729                 </td>
-<td> 1276                     </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust      </td>
-<td> Cap&#8217;n Proto (packed)    </td>
-<td> 398                  </td>
-<td> 246                      </td>
-</tr>
-</tbody>
-</table>
+<p>There&rsquo;s been a ton of work since 0.2. Here are the highlights:</p>
+
+<ul>
+<li><p>Ported over from std::old_io to std::io. There is a bit of a performance hit
+when serializing to <code>&amp;mut [u8]</code>, although it&rsquo;s really not that bad. In my goser
+benchmarks, previously it ran in 373 MB/s, but now it&rsquo;s running at 260 MB/s.
+However, this hasn&rsquo;t impacted the <code>Vec&lt;u8&gt;</code> serialization performance, nor
+deserialization performance.</p></li>
+<li><p>Much better JSON deserialization errors. Now <code>std::io::Error</code> is properly
+propogated, and error locations are reported when a <code>Deserialize</code> raises an error.</p></li>
+<li><p>Merged <code>serde::ser::Serializer</code> and <code>serde::ser::Visitor</code>.</p></li>
+<li><p>Renamed <code>serde::ser::Serialize::visit</code> to <code>serde::ser::Serialize::serialize</code>.</p></li>
+<li><p>Replaced <code>serde::ser::{Seq,Map}Visitor::size_hint</code> with a <code>len()</code> method that
+returns an optional length. This has a little stronger emphasis that we either
+need an exactly length or no length. Formats that need an exact length should
+make sure to verify the length passed in matches the actual amount of values
+serialized.</p></li>
+<li><p><code>serde::json</code> now deserializes missing values as a <code>()</code>.</p></li>
+<li><p>Finished implementing <code>#[derive(Serialize, Deserialize)]</code> for all struct and
+enum forms.</p></li>
+<li><p>Ported <code>serde_macros</code> over to <a href="https://github.com/erickt/rust-aster">aster</a>
+and <a href="https://github.com/erickt/rust-quasi">quasi</a>, which simplies code
+generation.</p></li>
+<li><p>Removed the unnessary <code>first</code> argument from <code>visit_{seq,map}_elt</code>.</p></li>
+<li><p>Rewrote enum deserializations to not require allocations. Oddly enough this
+is a tad slower than the allocation form. I suspect it&rsquo;s coming from the
+function calls not getting inlined away.</p></li>
+<li><p>Allowed enum serialization and deserialization to support more than one
+variant.</p></li>
+<li><p>Allowed <code>Deserialize</code> types to hint that it&rsquo;s expecting a sequence or a map.</p></li>
+<li><p>Allowed maps to be deserialized from a <code>()</code>.</p></li>
+<li><p>Added a <code>serde::bytes::{Bytes,ByteBuf}</code>, which wrap <code>&amp;[u8]</code>/<code>Vec&lt;u8&gt;</code> to allow
+some formats to encode these values more efficiently than generic sequences.</p></li>
+<li><p>Added <code>serde::de::value</code>, which contains some helper deserializers to
+deserialize from a Rust type.</p></li>
+<li><p>Added impls for most collection types in the standard library.</p></li>
+</ul>
 
 
-<p>I upgraded to OS X Yosemite, so I think that brought these numbers down overall
-from the last post.</p>
+<p>Thanks everyone that&rsquo;s helped out with this release!</p>
 </div>
 
 
@@ -230,12 +162,12 @@ from the last post.</p>
 
 
 
-<time class='entry-date' datetime='2014-11-11T08:11:34-08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>11</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>8:11 am</span></time>
+<time class='entry-date' datetime='2015-03-31T19:57:37-07:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>31</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>7:57 pm</span></time>
       
 
 <span class="categories">
   
-    <a class='category' href='/blog/categories/rust/'>rust</a>, <a class='category' href='/blog/categories/serialization/'>serialization</a>
+    <a class='category' href='/blog/categories/rust/'>rust</a>, <a class='category' href='/blog/categories/serde/'>serde</a>, <a class='category' href='/blog/categories/serialization/'>serialization</a>
   
 </span>
 
@@ -244,7 +176,7 @@ from the last post.</p>
     
       <div class="sharing">
   
-  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://erickt.github.io/blog/2014/11/11/benchmarks/" data-via="" data-counturl="http://erickt.github.io/blog/2014/11/11/benchmarks/" >Tweet</a>
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://erickt.github.io/blog/2015/03/31/serde-0-dot-3/" data-via="" data-counturl="http://erickt.github.io/blog/2015/03/31/serde-0-dot-3/" >Tweet</a>
   
   
   
@@ -253,10 +185,8 @@ from the last post.</p>
     
     <p class="meta">
       
-        <a class="basic-alignment left" href="/blog/2014/11/03/performance/" title="Previous Post: Rewriting Rust Serialization, Part 2: Performance">&laquo; Rewriting Rust Serialization, Part 2: Performance</a>
+        <a class="basic-alignment left" href="/blog/2015/02/16/rewriting-rust-serialization-there-can-be-only-one-serde/" title="Previous Post: Rewriting Rust Serialization: Part 4: Serde2 is ready!">&laquo; Rewriting Rust Serialization: Part 4: Serde2 is ready!</a>
       
-      
-        <a class="basic-alignment right" href="/blog/2014/11/13/benchmarks-2/" title="Next Post: Rewriting Rust Serialization, Part 2.2: More Benchmarks">Rewriting Rust Serialization, Part 2.2: More Benchmarks &raquo;</a>
       
     </p>
   </footer>
