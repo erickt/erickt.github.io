@@ -9,10 +9,9 @@
   <meta name="author" content="Erick Tryzelaar">
 
   
-  <meta name="description" content="I&rsquo;m happy to announce that I&rsquo;ve released
-serde 0.3 on
-crates.io today. For those unfamiliar with
-serde, it&rsquo;s a generic &hellip;">
+  <meta name="description" content="I just pushed up serde 0.3.1 to
+crates.io, which is now compatible with beta!
+serde_macros 0.3.1, however still requires nightly. But this means that &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -80,6 +79,77 @@ serde, it&rsquo;s a generic &hellip;">
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/04/12/serde-0-dot-3-1-now-compatible-with-beta/">Serde 0.3.1 - Now Compatible With Beta! Plus Aster and Quasi Updates</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-04-12T11:53:43-07:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>12</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>11:53 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>I just pushed up <a href="https://github.com/erickt/rust-serde">serde</a> 0.3.1 to
+<a href="https://crates.io/crates/serde">crates.io</a>, which is now compatible with beta!
+serde_macros 0.3.1, however still requires nightly.  But this means that if
+you implement the all the traits using stable features, then any users of serde
+should work with rust 1.0.</p>
+
+<p>Here&rsquo;s what&rsquo;s also new in serde v0.3.1:</p>
+
+<ul>
+<li>Renamed <code>ValueDeserializer::deserializer</code> into <code>ValueDeserializer::into_deserializer</code>.</li>
+<li>Renamed the attribute that changes the name a field is serialized
+<code>#[serde(alias="...")]</code> to <code>#[serde(rename="...")]</code>.</li>
+<li>Added implementations for <code>Box</code>, <code>Rc</code>, and <code>Arc</code>.</li>
+<li>Updated <code>VariantVisitor</code> to hint to the deserializer which variant kind it is expecting.
+This allows serializers to serialize a unit variant as a string.</li>
+<li>Added an <code>Error::unknown_field_error</code> error message.</li>
+<li>Progress on the documentation, but there&rsquo;s still plenty more to go.</li>
+</ul>
+
+
+<p>Upstream of serde, I&rsquo;ve been also doing some work on
+<a href="https://github.com/erickt/rust-aster">aster</a> and
+<a href="https://github.com/erickt/rust-quasi">quasi</a>, which are my helper libraries to
+simplify writing syntax extensions.</p>
+
+<p>aster v0.2.0:</p>
+
+<ul>
+<li>Added builders for qualified paths, slices, <code>Vec</code>, <code>Box</code>, <code>Rc</code>, and <code>Arc</code>.</li>
+<li>Extended item builders to support <code>use</code> simple paths, globs, and lists.</li>
+<li>Added a helper for building the <code>#[automatically_derived]</code> annotation.</li>
+</ul>
+
+
+<p>quasi v0.1.9:</p>
+
+<ul>
+<li>Backported support for <code>quote_attr!()</code> and <code>quote_matchers!()</code> from <code>libsyntax</code>.</li>
+<li>Added support for unquoting arbitrary slices.</li>
+</ul>
+
+
+<p>Thanks for everyone&rsquo;s help with this release!</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -6603,151 +6673,6 @@ sure if the other languages are able to avoid that allocation.</li>
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/11/11/benchmarks/">Rewriting Rust Serialization, Part 2.1: Benchmarks</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-11-11T08:11:34-08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>11</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>8:11 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>After <a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2</a> I received
-a couple requests to add in a couple other rust serialization libraries. So one
-thing led to another, and now I&rsquo;ve got a benchmark suite I&rsquo;m calling
-<a href="https://github.com/erickt/rust-serialization-benchmarks">rust-serialization-benchmarks</a>.
-Really creative name, eh? This includes all the other benchmarks I referred to
-previously, as well as <a href="https://github.com/dwrensha/capnproto-rust">capnproto</a>,
-<a href="https://github.com/mneumann/rust-msgpack">msgpack</a>, and
-<a href="https://github.com/stepancheg/rust-protobuf">protobuf</a>.</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library             </th>
-<th> format                  </th>
-<th> serialization (MB/s) </th>
-<th> deserialization (MB/s)   </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> C++      </td>
-<td> rapidjson           </td>
-<td> JSON (dom)              </td>
-<td> 233                  </td>
-<td> 102                      </td>
-</tr>
-<tr>
-<td> C++      </td>
-<td> rapidjson           </td>
-<td> JSON (sax)              </td>
-<td> 233                  </td>
-<td> 124                      </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> encoding/json       </td>
-<td> JSON                    </td>
-<td> 54.93                </td>
-<td> 16.72                    </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> ffjson              </td>
-<td> JSON                    </td>
-<td> 126.40               </td>
-<td> (not supported)          </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> goprotobuf          </td>
-<td> Protocol Buffers        </td>
-<td> 138.27               </td>
-<td> 91.18                    </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> gogoprotobuf        </td>
-<td> Protocol Buffers        </td>
-<td> 472.69               </td>
-<td> 295.33                   </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto        </td>
-<td> Cap&#8217;n Proto             </td>
-<td> 2226.71              </td>
-<td> 450                      </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto        </td>
-<td> Cap&#8217;n Proto (zero copy) </td>
-<td> 2226.71              </td>
-<td> 1393.3                   </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> serialize::json     </td>
-<td> JSON                    </td>
-<td> 89                   </td>
-<td> 18                       </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> rust-msgpack        </td>
-<td> MessagePack             </td>
-<td> 160                  </td>
-<td> 52                       </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> rust-protobuf       </td>
-<td> Protocol Buffers        </td>
-<td> 177                  </td>
-<td> 70                       </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust      </td>
-<td> Cap&#8217;n Proto (unpacked)  </td>
-<td> 1729                 </td>
-<td> 1276                     </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust      </td>
-<td> Cap&#8217;n Proto (packed)    </td>
-<td> 398                  </td>
-<td> 246                      </td>
-</tr>
-</tbody>
-</table>
-
-
-<p>I upgraded to OS X Yosemite, so I think that brought these numbers down overall
-from the last post.</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/2">&larr; Older</a>
@@ -6763,6 +6688,10 @@ from the last post.</p>
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/04/12/serde-0-dot-3-1-now-compatible-with-beta/">Serde 0.3.1 - Now Compatible With Beta! Plus Aster and Quasi Updates</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/03/31/serde-0-dot-3/">Serde 0.3</a>
       </li>
     
@@ -6776,10 +6705,6 @@ from the last post.</p>
     
       <li class="post">
         <a href="/blog/2014/12/13/performance-digression/">Rewriting Rust Serialization, Part 3.1: Another Performance Digression</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2014/12/13/rewriting-rust-serialization/">Rewriting Rust Serialization, Part 3: Introducing Serde</a>
       </li>
     
   </ul>

@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd" xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
+    <loc>http://erickt.github.io/blog/2015/04/12/serde-0-dot-3-1-now-compatible-with-beta/</loc>
+    <lastmod>2015-04-12T11:53:43-07:00</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
     <loc>http://erickt.github.io/blog/2015/03/31/serde-0-dot-3/</loc>
     <lastmod>2015-03-31T19:57:37-07:00</lastmod>
     <priority>0.8</priority>
@@ -72,13 +77,13 @@
   </url>
   <url>
     <loc>http://erickt.github.io/blog/archives/</loc>
-    <lastmod>2015-03-31T22:24:42-07:00</lastmod>
+    <lastmod>2015-04-12T12:13:36-07:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>http://erickt.github.io/</loc>
-    <lastmod>2015-03-31T22:24:42-07:00</lastmod>
+    <lastmod>2015-04-12T12:13:36-07:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>

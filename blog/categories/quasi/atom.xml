@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: Quasi | Chasing Rabbits]]></title>
+  <link href="http://erickt.github.io/blog/categories/quasi/atom.xml" rel="self"/>
+  <link href="http://erickt.github.io/"/>
+  <updated>2015-04-12T12:13:36-07:00</updated>
+  <id>http://erickt.github.io/</id>
+  <author>
+    <name><![CDATA[Erick Tryzelaar]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Serde 0.3.1 - Now Compatible With Beta! Plus Aster and Quasi Updates]]></title>
+    <link href="http://erickt.github.io/blog/2015/04/12/serde-0-dot-3-1-now-compatible-with-beta/"/>
+    <updated>2015-04-12T11:53:43-07:00</updated>
+    <id>http://erickt.github.io/blog/2015/04/12/serde-0-dot-3-1-now-compatible-with-beta</id>
+    <content type="html"><![CDATA[<p>I just pushed up <a href="https://github.com/erickt/rust-serde">serde</a> 0.3.1 to
+<a href="https://crates.io/crates/serde">crates.io</a>, which is now compatible with beta!
+serde_macros 0.3.1, however still requires nightly.  But this means that if
+you implement the all the traits using stable features, then any users of serde
+should work with rust 1.0.</p>
+
+<p>Here&rsquo;s what&rsquo;s also new in serde v0.3.1:</p>
+
+<ul>
+<li>Renamed <code>ValueDeserializer::deserializer</code> into <code>ValueDeserializer::into_deserializer</code>.</li>
+<li>Renamed the attribute that changes the name a field is serialized
+<code>#[serde(alias="...")]</code> to <code>#[serde(rename="...")]</code>.</li>
+<li>Added implementations for <code>Box</code>, <code>Rc</code>, and <code>Arc</code>.</li>
+<li>Updated <code>VariantVisitor</code> to hint to the deserializer which variant kind it is expecting.
+This allows serializers to serialize a unit variant as a string.</li>
+<li>Added an <code>Error::unknown_field_error</code> error message.</li>
+<li>Progress on the documentation, but there&rsquo;s still plenty more to go.</li>
+</ul>
+
+
+<p>Upstream of serde, I&rsquo;ve been also doing some work on
+<a href="https://github.com/erickt/rust-aster">aster</a> and
+<a href="https://github.com/erickt/rust-quasi">quasi</a>, which are my helper libraries to
+simplify writing syntax extensions.</p>
+
+<p>aster v0.2.0:</p>
+
+<ul>
+<li>Added builders for qualified paths, slices, <code>Vec</code>, <code>Box</code>, <code>Rc</code>, and <code>Arc</code>.</li>
+<li>Extended item builders to support <code>use</code> simple paths, globs, and lists.</li>
+<li>Added a helper for building the <code>#[automatically_derived]</code> annotation.</li>
+</ul>
+
+
+<p>quasi v0.1.9:</p>
+
+<ul>
+<li>Backported support for <code>quote_attr!()</code> and <code>quote_matchers!()</code> from <code>libsyntax</code>.</li>
+<li>Added support for unquoting arbitrary slices.</li>
+</ul>
+
+
+<p>Thanks for everyone&rsquo;s help with this release!</p>
+]]></content>
+  </entry>
+  
+</feed>
