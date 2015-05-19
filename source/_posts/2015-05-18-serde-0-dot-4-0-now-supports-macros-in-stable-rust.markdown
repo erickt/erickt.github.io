@@ -215,7 +215,7 @@ Instead you have to pull out the syntex macros into a separate variable:
 
 ```rust
 let expr = quote_expr!(cx, 1 + 1);
-let exprs = vec![e];
+let exprs = vec![expr];
 ```
 
 Downside 3: Compile Times
@@ -249,7 +249,14 @@ struct Point {
 
 * Faster JSON string parsing [#71](https://github.com/serde-rs/serde/pull/71).
 * Add a `LineColIterator` that tracks line and column information for
-  deserializers [#58](https://github.com/serde-rs/serde/pull/58).
+	deserializers [#58](https://github.com/serde-rs/serde/pull/58).
+* Improved bytestring support [#72](https://github.com/serde-rs/serde/pull/72)
+* Changed `de::PrimitiveVisitor` to also depend on `FromStr`
+  [#70](https://github.com/serde-rs/serde/pull/70)
+* Added impls for fixed sized arrays with 1 to 32 elements
+  [#74](https://github.com/serde-rs/serde/pull/74)
+* Added `json::Value::lookup`, that allows values to be extracted with
+  `value.lookup("foo.bar.baz")` [#76](https://github.com/serde-rs/serde/pull/76)
 
 Bug Fixes:
 
@@ -257,14 +264,18 @@ Bug Fixes:
   [f0c87fb](https://github.com/serde-rs/serde/commit/f0c87fb).
 * Missing field errors displayed original field name instead of renamed
   [#64](https://github.com/serde-rs/serde/pull/64).
+* Fixed handling json integer overflow
 
 A special thanks to everyone that helped with this release:
 
 * Alex Crichton
 * Andrew Poelstra
+* Corey Farwell
 * Hugo Duncan
 * Kang Seonghoon
+* Mikhail Borisov
 * Oliver Schneider
 * Sebastian Thiel
 * Steven Fackler
+* Thomas Bahn
 * derhaskell
