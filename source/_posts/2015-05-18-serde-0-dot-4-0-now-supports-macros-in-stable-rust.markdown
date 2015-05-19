@@ -272,6 +272,7 @@ A special thanks to everyone that helped with this release:
 * Andrew Poelstra
 * Corey Farwell
 * Hugo Duncan
+* Jorge Israel Peña
 * Kang Seonghoon
 * Mikhail Borisov
 * Oliver Schneider
