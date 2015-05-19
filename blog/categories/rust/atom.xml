@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Rust | Chasing Rabbits]]></title>
   <link href="http://erickt.github.io/blog/categories/rust/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2015-05-19T08:44:32-07:00</updated>
+  <updated>2015-05-19T09:23:10-07:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -35,7 +35,7 @@ nightly because it uses <code>serde_macros</code>. The <code>Cargo.toml</code> i
 <pre><code class="toml">[package]
 name = "hello_world"
 versio = "0.1.0"
-authors = ["Erick Tryzelaar &lt;erick.tryzelaar@gmail.com&gt;]
+authors = ["Erick Tryzelaar &lt;erick.tryzelaar@gmail.com&gt;"]
 license = "MIT/Apache-2.0"
 
 [dependencies]
@@ -84,7 +84,7 @@ We&rsquo;ll configure <code>Cargo.toml</code> with:</p>
 <pre><code class="toml">[package]
 name = "hello_world"
 versio = "0.1.0"
-authors = ["Erick Tryzelaar &lt;erick.tryzelaar@gmail.com&gt;]
+authors = ["Erick Tryzelaar &lt;erick.tryzelaar@gmail.com&gt;"]
 license = "MIT/Apache-2.0"
 build = "build.rs"
 
@@ -131,7 +131,7 @@ our example, we&rsquo;ll change the <code>Cargo.toml</code> to:</p>
 <pre><code class="toml">[package]
 name = "hello_world"
 versio = "0.1.0"
-authors = ["Erick Tryzelaar &lt;erick.tryzelaar@gmail.com&gt;]
+authors = ["Erick Tryzelaar &lt;erick.tryzelaar@gmail.com&gt;"]
 license = "MIT/Apache-2.0"
 build = "build.rs"
 
@@ -214,7 +214,7 @@ you cannot write:</p>
 <p>Instead you have to pull out the syntex macros into a separate variable:</p>
 
 <pre><code class="rust">let expr = quote_expr!(cx, 1 + 1);
-let exprs = vec![e];
+let exprs = vec![expr];
 </code></pre>
 
 <h2>Downside 3: Compile Times</h2>
@@ -249,7 +249,14 @@ that may be difficult while keeping compatibility with <code>libsyntax</code>.</
 <ul>
 <li>Faster JSON string parsing <a href="https://github.com/serde-rs/serde/pull/71">#71</a>.</li>
 <li>Add a <code>LineColIterator</code> that tracks line and column information for
-deserializers <a href="https://github.com/serde-rs/serde/pull/58">#58</a>.</li>
+  deserializers <a href="https://github.com/serde-rs/serde/pull/58">#58</a>.</li>
+<li>Improved bytestring support <a href="https://github.com/serde-rs/serde/pull/72">#72</a></li>
+<li>Changed <code>de::PrimitiveVisitor</code> to also depend on <code>FromStr</code>
+<a href="https://github.com/serde-rs/serde/pull/70">#70</a></li>
+<li>Added impls for fixed sized arrays with 1 to 32 elements
+<a href="https://github.com/serde-rs/serde/pull/74">#74</a></li>
+<li>Added <code>json::Value::lookup</code>, that allows values to be extracted with
+<code>value.lookup("foo.bar.baz")</code> <a href="https://github.com/serde-rs/serde/pull/76">#76</a></li>
 </ul>
 
 
@@ -260,6 +267,7 @@ deserializers <a href="https://github.com/serde-rs/serde/pull/58">#58</a>.</li>
 <a href="https://github.com/serde-rs/serde/commit/f0c87fb">f0c87fb</a>.</li>
 <li>Missing field errors displayed original field name instead of renamed
 <a href="https://github.com/serde-rs/serde/pull/64">#64</a>.</li>
+<li>Fixed handling json integer overflow</li>
 </ul>
 
 
@@ -268,11 +276,14 @@ deserializers <a href="https://github.com/serde-rs/serde/pull/58">#58</a>.</li>
 <ul>
 <li>Alex Crichton</li>
 <li>Andrew Poelstra</li>
+<li>Corey Farwell</li>
 <li>Hugo Duncan</li>
 <li>Kang Seonghoon</li>
+<li>Mikhail Borisov</li>
 <li>Oliver Schneider</li>
 <li>Sebastian Thiel</li>
 <li>Steven Fackler</li>
+<li>Thomas Bahn</li>
 <li>derhaskell</li>
 </ul>
 
