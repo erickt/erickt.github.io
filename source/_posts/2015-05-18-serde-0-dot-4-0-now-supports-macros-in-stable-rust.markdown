@@ -24,7 +24,7 @@ nightly because it uses `serde_macros`. The `Cargo.toml` is:
 [package]
 name = "hello_world"
 versio = "0.1.0"
-authors = ["Erick Tryzelaar <erick.tryzelaar@gmail.com>]
+authors = ["Erick Tryzelaar <erick.tryzelaar@gmail.com>"]
 license = "MIT/Apache-2.0"
 
 [dependencies]
@@ -77,7 +77,7 @@ We'll configure `Cargo.toml` with:
 [package]
 name = "hello_world"
 versio = "0.1.0"
-authors = ["Erick Tryzelaar <erick.tryzelaar@gmail.com>]
+authors = ["Erick Tryzelaar <erick.tryzelaar@gmail.com>"]
 license = "MIT/Apache-2.0"
 build = "build.rs"
 
@@ -127,7 +127,7 @@ our example, we'll change the `Cargo.toml` to:
 [package]
 name = "hello_world"
 versio = "0.1.0"
-authors = ["Erick Tryzelaar <erick.tryzelaar@gmail.com>]
+authors = ["Erick Tryzelaar <erick.tryzelaar@gmail.com>"]
 license = "MIT/Apache-2.0"
 build = "build.rs"
 
