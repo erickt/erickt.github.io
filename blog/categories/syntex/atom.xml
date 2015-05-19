@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Syntex | Chasing Rabbits]]></title>
   <link href="http://erickt.github.io/blog/categories/syntex/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2015-04-12T12:13:36-07:00</updated>
+  <updated>2015-05-19T08:44:32-07:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -12,6 +12,272 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Serde 0.4.0 - Syntax Extensions in Stable Rust and More!]]></title>
+    <link href="http://erickt.github.io/blog/2015/05/18/serde-0-dot-4-0-now-supports-macros-in-stable-rust/"/>
+    <updated>2015-05-18T07:57:19-07:00</updated>
+    <id>http://erickt.github.io/blog/2015/05/18/serde-0-dot-4-0-now-supports-macros-in-stable-rust</id>
+    <content type="html"><![CDATA[<p>Hello Internet! I&rsquo;m pleased to announce
+<a href="https://github.com/serde-rs/serde">serde</a> 0.4.0, which now supports many new
+features with help from our growing serde community. The largest is now serde
+supports syntax extensions in stable Rust by way of
+<a href="https://github.com/erickt/rust-syntex">syntex</a>. syntex is a fork of Rust&rsquo;s
+parser library libsyntax that has been modified to enable code generation.
+serde uses it along with a
+<a href="http://doc.crates.io/build-script.html">Cargo build script</a> to expand the
+<code>#[derive(Serialize, Deserialize)]</code> decorator annotations. Here&rsquo;s how to use
+it.</p>
+
+<p>First, lets start with a simple serde 0.3.x project that&rsquo;s forced to use
+nightly because it uses <code>serde_macros</code>. The <code>Cargo.toml</code> is:</p>
+
+<pre><code class="toml">[package]
+name = "hello_world"
+versio = "0.1.0"
+authors = ["Erick Tryzelaar &lt;erick.tryzelaar@gmail.com&gt;]
+license = "MIT/Apache-2.0"
+
+[dependencies]
+serde = "*"
+serde_macros = "*"
+</code></pre>
+
+<p>And the actual library is <code>src/lib.rs</code>:</p>
+
+<pre><code class="rust">#[feature(custom_derive, plugin)]
+#[plugin(serde_macros)]
+
+extern crate serde;
+
+#[derive(Serialize, Deserialize)]
+pub struct Point {
+    x: u32,
+    y: u32,
+}
+</code></pre>
+
+<p>In order to use Stable Rust, we can use the new <code>serde_codegen</code>. Our strategy
+is to split our input into two files. The first is the entry point Cargo will
+use to compile the library, <code>src/lib.rs</code>. The second is a template that
+contains the macros, <code>src/lib.rs.in</code>. It will be expanded into
+<code>$OUT_DIR/lib.rs</code>, which is included in <code>src/lib.rs</code>. So <code>src/lib.rs</code> looks
+like:</p>
+
+<pre><code class="rust">extern crate serde;
+
+include!(concat!(env!("OUT_DIR"), "/lib.rs"));
+</code></pre>
+
+<p><code>src/lib.rs.in</code> then just looks like:</p>
+
+<pre><code class="rust">#[derive(Serialize, Deserialize)]
+pub struct Point {
+    x: u32,
+    y: u32,
+}
+</code></pre>
+
+<p>In order to generate the <code>$OUT_DIR/lib.rs</code>, we&rsquo;ll use a Cargo build script.
+We&rsquo;ll configure <code>Cargo.toml</code> with:</p>
+
+<pre><code class="toml">[package]
+name = "hello_world"
+versio = "0.1.0"
+authors = ["Erick Tryzelaar &lt;erick.tryzelaar@gmail.com&gt;]
+license = "MIT/Apache-2.0"
+build = "build.rs"
+
+[build-dependencies]
+syntex = "*"
+serde_codegen = "*"
+
+[dependencies]
+serde = "*"
+</code></pre>
+
+<p>Finally, the <code>build.rs</code> script itself uses <code>syntex</code> to expand the syntax
+extensions:</p>
+
+<pre><code class="rust">extern crate syntex;
+extern crate serde_codegen;
+
+use std::env;
+use std::path::Path;
+
+fn main() {
+    let out_dir = env::var_os("OUT_DIR").unwrap();
+
+    let src = Path::new("src/lib.rs.in");
+    let dst = Path::new(&amp;out_dir).join("lib.rs");
+
+    let mut registry = syntex::Registry::new();
+
+    serde_codegen::register(&amp;mut registry);
+    registry.expand("", &amp;src, &amp;dst).unwrap();
+}
+</code></pre>
+
+<h2>Downside 1: Error Locations</h2>
+
+<p>While <code>syntex</code> is quite powerful, there are a few major downsides. Rust does
+not yet support the ability for a generated file to provide error location
+information from a template file. This means that tracking down errors requires
+manually looking at the generated code and trying to identify where the error
+in the template. However, there is a workaround.  It&rsquo;s actually not that
+difficult to support <code>syntex</code> and the Rust Nightly compiler plugins. To update
+our example, we&rsquo;ll change the <code>Cargo.toml</code> to:</p>
+
+<pre><code class="toml">[package]
+name = "hello_world"
+versio = "0.1.0"
+authors = ["Erick Tryzelaar &lt;erick.tryzelaar@gmail.com&gt;]
+license = "MIT/Apache-2.0"
+build = "build.rs"
+
+[features]
+default = ["with_syntex"]
+nightly = ["serde_macros"]
+with_syntex = ["serde_codegen"]
+
+[build-dependencies]
+syntex = { version = "*", optional = true }
+serde_codegen = { version = "*", optional = true }
+
+[dependencies]
+serde = "*"
+serde_macros = { version = "*", optional = true }
+</code></pre>
+
+<p>Then the <code>build.rs</code> is changed to optionally expand the macros in our template:</p>
+
+<pre><code class="rust">#[cfg(feature = "with_syntex")]
+mod inner {
+    extern crate syntex;
+    extern crate serde_codegen;
+
+    use std::env;
+    use std::path::Path;
+
+    pub fn main() {
+        let out_dir = env::var_os("OUT_DIR").unwrap();
+
+        let src = Path::new("src/lib.rs.in");
+        let dst = Path::new(&amp;out_dir).join("lib.rs");
+
+        let mut registry = syntex::Registry::new();
+
+        serde_codegen::register(&amp;mut registry);
+        registry.expand("", &amp;src, &amp;dst).unwrap();
+    }
+}
+
+#[cfg(not(feature = "with_syntex"))]
+mod inner {
+    pub fn main() {}
+}
+
+pub fn main() {
+    inner::main()
+}
+</code></pre>
+
+<p>Finally, <code>src/lib.rs</code> is updated to:</p>
+
+<pre><code class="rust">#[cfg_attr(feature = "nightly", feature(plugin))]
+#[cfg_attr(feature = "nightly", plugin(serde_macros))]
+
+extern crate serde;
+
+#[cfg(feature = "nightly")]
+include!("lib.rs.in");
+
+#[cfg(feature = "with_syntex")]
+include!(concat!(env!("OUT_DIR"), "/lib.rs"));
+</code></pre>
+
+<p>Then most development can happen with using the Nightly Rust and
+<code>cargo build --no-default-features --features nightly</code> for better error
+messages, but downstream consumers can use Stable Rust without worry.</p>
+
+<h2>Downside 2: Macros in Macros</h2>
+
+<p>Syntex can only expand macros inside macros it knows about, and it doesn&rsquo;t know
+about the builtin macros. This is because a lot of the stable macros are using
+unstable features under the covers. So unfortunately if you&rsquo;re using a library
+like the quasiquoting library <a href="https://github.com/erickt/rust-quasi">quasi</a>,
+you cannot write:</p>
+
+<pre><code class="rust">let exprs = vec![quote_expr!(cx, 1 + 2)];
+</code></pre>
+
+<p>Instead you have to pull out the syntex macros into a separate variable:</p>
+
+<pre><code class="rust">let expr = quote_expr!(cx, 1 + 1);
+let exprs = vec![e];
+</code></pre>
+
+<h2>Downside 3: Compile Times</h2>
+
+<p>Syntex can take a while to compile. It may be possible to optimize this, but
+that may be difficult while keeping compatibility with <code>libsyntax</code>.</p>
+
+<hr />
+
+<p>That&rsquo;s <code>v0.4.0</code>. I hope you enjoy it! Please let me know if you run into any
+<a href="https://github.com/serde-rs/serde/issues">problems</a>.</p>
+
+<h2>Release Notes</h2>
+
+<p>Here are other things that came with this version:</p>
+
+<ul>
+<li>Added field annotation to enable renaming fields for different backends
+<a href="https://github.com/serde-rs/serde/pull/69">#69</a>. For example:</li>
+</ul>
+
+
+<pre><code class="rust">struct Point {
+  #[serde(rename="X")]
+  x: u32,
+
+  #[serde(rename(json="the-x", xml="X")]
+  y: u32,
+}
+</code></pre>
+
+<ul>
+<li>Faster JSON string parsing <a href="https://github.com/serde-rs/serde/pull/71">#71</a>.</li>
+<li>Add a <code>LineColIterator</code> that tracks line and column information for
+deserializers <a href="https://github.com/serde-rs/serde/pull/58">#58</a>.</li>
+</ul>
+
+
+<p>Bug Fixes:</p>
+
+<ul>
+<li>Make sure that -0.0 gets serialized as &ldquo;-0.0&rdquo;
+<a href="https://github.com/serde-rs/serde/commit/f0c87fb">f0c87fb</a>.</li>
+<li>Missing field errors displayed original field name instead of renamed
+<a href="https://github.com/serde-rs/serde/pull/64">#64</a>.</li>
+</ul>
+
+
+<p>A special thanks to everyone that helped with this release:</p>
+
+<ul>
+<li>Alex Crichton</li>
+<li>Andrew Poelstra</li>
+<li>Hugo Duncan</li>
+<li>Kang Seonghoon</li>
+<li>Oliver Schneider</li>
+<li>Sebastian Thiel</li>
+<li>Steven Fackler</li>
+<li>derhaskell</li>
+</ul>
+
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Syntex: Syntax Extensions for Rust 1.0]]></title>

@@ -9,9 +9,9 @@
   <meta name="author" content="Erick Tryzelaar">
 
   
-  <meta name="description" content="I just pushed up serde 0.3.1 to
-crates.io, which is now compatible with beta!
-serde_macros 0.3.1, however still requires nightly. But this means that &hellip;">
+  <meta name="description" content="Hello Internet! I&rsquo;m pleased to announce
+serde 0.4.0, which now supports many new
+features with help from our growing serde community. The &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -79,6 +79,429 @@ serde_macros 0.3.1, however still requires nightly. But this means that &hellip;
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/05/18/serde-0-dot-4-0-now-supports-macros-in-stable-rust/">Serde 0.4.0 - Syntax Extensions in Stable Rust and More!</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-05-18T07:57:19-07:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>18</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:57 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>Hello Internet! I&rsquo;m pleased to announce
+<a href="https://github.com/serde-rs/serde">serde</a> 0.4.0, which now supports many new
+features with help from our growing serde community. The largest is now serde
+supports syntax extensions in stable Rust by way of
+<a href="https://github.com/erickt/rust-syntex">syntex</a>. syntex is a fork of Rust&rsquo;s
+parser library libsyntax that has been modified to enable code generation.
+serde uses it along with a
+<a href="http://doc.crates.io/build-script.html">Cargo build script</a> to expand the
+<code>#[derive(Serialize, Deserialize)]</code> decorator annotations. Here&rsquo;s how to use
+it.</p>
+
+<p>First, lets start with a simple serde 0.3.x project that&rsquo;s forced to use
+nightly because it uses <code>serde_macros</code>. The <code>Cargo.toml</code> is:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class='toml'><span class='line'><span class="p">[</span><span class="n">package</span><span class="p">]</span>
+</span><span class='line'><span class="n">name</span> <span class="o">=</span> <span class="s">&quot;hello_world&quot;</span>
+</span><span class='line'><span class="n">versio</span> <span class="o">=</span> <span class="s">&quot;0.1.0&quot;</span>
+</span><span class='line'><span class="n">authors</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;Erick Tryzelaar &lt;erick.tryzelaar@gmail.com&gt;]</span>
+</span><span class='line'><span class="s">license = &quot;</span><span class="n">MIT</span><span class="err">/</span><span class="n">Apache-2</span><span class="mf">.0</span><span class="s">&quot;</span>
+</span><span class='line'>
+</span><span class='line'><span class="s">[dependencies]</span>
+</span><span class='line'><span class="s">serde = &quot;</span><span class="err">*</span><span class="s">&quot;</span>
+</span><span class='line'><span class="s">serde_macros = &quot;</span><span class="err">*&quot;</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And the actual library is <code>src/lib.rs</code>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="cp">#[feature(custom_derive, plugin)]</span>
+</span><span class='line'><span class="cp">#[plugin(serde_macros)]</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">serde</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#[derive(Serialize, Deserialize)]</span>
+</span><span class='line'><span class="k">pub</span> <span class="k">struct</span> <span class="n">Point</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">x</span><span class="o">:</span> <span class="kt">u32</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">y</span><span class="o">:</span> <span class="kt">u32</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>In order to use Stable Rust, we can use the new <code>serde_codegen</code>. Our strategy
+is to split our input into two files. The first is the entry point Cargo will
+use to compile the library, <code>src/lib.rs</code>. The second is a template that
+contains the macros, <code>src/lib.rs.in</code>. It will be expanded into
+<code>$OUT_DIR/lib.rs</code>, which is included in <code>src/lib.rs</code>. So <code>src/lib.rs</code> looks
+like:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">serde</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="n">include</span><span class="o">!</span><span class="p">(</span><span class="n">concat</span><span class="o">!</span><span class="p">(</span><span class="n">env</span><span class="o">!</span><span class="p">(</span><span class="s">&quot;OUT_DIR&quot;</span><span class="p">),</span> <span class="s">&quot;/lib.rs&quot;</span><span class="p">));</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>src/lib.rs.in</code> then just looks like:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="cp">#[derive(Serialize, Deserialize)]</span>
+</span><span class='line'><span class="k">pub</span> <span class="k">struct</span> <span class="n">Point</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">x</span><span class="o">:</span> <span class="kt">u32</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">y</span><span class="o">:</span> <span class="kt">u32</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>In order to generate the <code>$OUT_DIR/lib.rs</code>, we&rsquo;ll use a Cargo build script.
+We&rsquo;ll configure <code>Cargo.toml</code> with:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class='toml'><span class='line'><span class="p">[</span><span class="n">package</span><span class="p">]</span>
+</span><span class='line'><span class="n">name</span> <span class="o">=</span> <span class="s">&quot;hello_world&quot;</span>
+</span><span class='line'><span class="n">versio</span> <span class="o">=</span> <span class="s">&quot;0.1.0&quot;</span>
+</span><span class='line'><span class="n">authors</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;Erick Tryzelaar &lt;erick.tryzelaar@gmail.com&gt;]</span>
+</span><span class='line'><span class="s">license = &quot;</span><span class="n">MIT</span><span class="err">/</span><span class="n">Apache-2</span><span class="mf">.0</span><span class="s">&quot;</span>
+</span><span class='line'><span class="s">build = &quot;</span><span class="n">build</span><span class="p">.</span><span class="n">rs</span><span class="s">&quot;</span>
+</span><span class='line'>
+</span><span class='line'><span class="s">[build-dependencies]</span>
+</span><span class='line'><span class="s">syntex = &quot;</span><span class="err">*</span><span class="s">&quot;</span>
+</span><span class='line'><span class="s">serde_codegen = &quot;</span><span class="err">*</span><span class="s">&quot;</span>
+</span><span class='line'>
+</span><span class='line'><span class="s">[dependencies]</span>
+</span><span class='line'><span class="s">serde = &quot;</span><span class="err">*&quot;</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Finally, the <code>build.rs</code> script itself uses <code>syntex</code> to expand the syntax
+extensions:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">syntex</span><span class="p">;</span>
+</span><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">serde_codegen</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="kn">use</span> <span class="n">std</span><span class="o">::</span><span class="n">env</span><span class="p">;</span>
+</span><span class='line'><span class="kn">use</span> <span class="n">std</span><span class="o">::</span><span class="n">path</span><span class="o">::</span><span class="nb">Path</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">fn</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">out_dir</span> <span class="o">=</span> <span class="n">env</span><span class="o">::</span><span class="n">var_os</span><span class="p">(</span><span class="s">&quot;OUT_DIR&quot;</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">src</span> <span class="o">=</span> <span class="nb">Path</span><span class="o">::</span><span class="n">new</span><span class="p">(</span><span class="s">&quot;src/lib.rs.in&quot;</span><span class="p">);</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">dst</span> <span class="o">=</span> <span class="nb">Path</span><span class="o">::</span><span class="n">new</span><span class="p">(</span><span class="o">&amp;</span><span class="n">out_dir</span><span class="p">).</span><span class="n">join</span><span class="p">(</span><span class="s">&quot;lib.rs&quot;</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">let</span> <span class="k">mut</span> <span class="n">registry</span> <span class="o">=</span> <span class="n">syntex</span><span class="o">::</span><span class="n">Registry</span><span class="o">::</span><span class="n">new</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">serde_codegen</span><span class="o">::</span><span class="n">register</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">registry</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">registry</span><span class="p">.</span><span class="n">expand</span><span class="p">(</span><span class="s">&quot;&quot;</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">src</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">dst</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>Downside 1: Error Locations</h2>
+
+<p>While <code>syntex</code> is quite powerful, there are a few major downsides. Rust does
+not yet support the ability for a generated file to provide error location
+information from a template file. This means that tracking down errors requires
+manually looking at the generated code and trying to identify where the error
+in the template. However, there is a workaround.  It&rsquo;s actually not that
+difficult to support <code>syntex</code> and the Rust Nightly compiler plugins. To update
+our example, we&rsquo;ll change the <code>Cargo.toml</code> to:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class='toml'><span class='line'><span class="p">[</span><span class="n">package</span><span class="p">]</span>
+</span><span class='line'><span class="n">name</span> <span class="o">=</span> <span class="s">&quot;hello_world&quot;</span>
+</span><span class='line'><span class="n">versio</span> <span class="o">=</span> <span class="s">&quot;0.1.0&quot;</span>
+</span><span class='line'><span class="n">authors</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;Erick Tryzelaar &lt;erick.tryzelaar@gmail.com&gt;]</span>
+</span><span class='line'><span class="s">license = &quot;</span><span class="n">MIT</span><span class="err">/</span><span class="n">Apache-2</span><span class="mf">.0</span><span class="s">&quot;</span>
+</span><span class='line'><span class="s">build = &quot;</span><span class="n">build</span><span class="p">.</span><span class="n">rs</span><span class="s">&quot;</span>
+</span><span class='line'>
+</span><span class='line'><span class="s">[features]</span>
+</span><span class='line'><span class="s">default = [&quot;</span><span class="n">with_syntex</span><span class="s">&quot;]</span>
+</span><span class='line'><span class="s">nightly = [&quot;</span><span class="n">serde_macros</span><span class="s">&quot;]</span>
+</span><span class='line'><span class="s">with_syntex = [&quot;</span><span class="n">serde_codegen</span><span class="s">&quot;]</span>
+</span><span class='line'>
+</span><span class='line'><span class="s">[build-dependencies]</span>
+</span><span class='line'><span class="s">syntex = { version = &quot;</span><span class="err">*</span><span class="s">&quot;, optional = true }</span>
+</span><span class='line'><span class="s">serde_codegen = { version = &quot;</span><span class="err">*</span><span class="s">&quot;, optional = true }</span>
+</span><span class='line'>
+</span><span class='line'><span class="s">[dependencies]</span>
+</span><span class='line'><span class="s">serde = &quot;</span><span class="err">*</span><span class="s">&quot;</span>
+</span><span class='line'><span class="s">serde_macros = { version = &quot;</span><span class="err">*&quot;</span><span class="p">,</span> <span class="n">optional</span> <span class="o">=</span> <span class="n">true</span> <span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Then the <code>build.rs</code> is changed to optionally expand the macros in our template:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="cp">#[cfg(feature = </span><span class="s">&quot;with_syntex&quot;</span><span class="cp">)]</span>
+</span><span class='line'><span class="kn">mod</span> <span class="n">inner</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">extern</span> <span class="n">crate</span> <span class="n">syntex</span><span class="p">;</span>
+</span><span class='line'>    <span class="k">extern</span> <span class="n">crate</span> <span class="n">serde_codegen</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kn">use</span> <span class="n">std</span><span class="o">::</span><span class="n">env</span><span class="p">;</span>
+</span><span class='line'>    <span class="kn">use</span> <span class="n">std</span><span class="o">::</span><span class="n">path</span><span class="o">::</span><span class="nb">Path</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">pub</span> <span class="k">fn</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">out_dir</span> <span class="o">=</span> <span class="n">env</span><span class="o">::</span><span class="n">var_os</span><span class="p">(</span><span class="s">&quot;OUT_DIR&quot;</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">src</span> <span class="o">=</span> <span class="nb">Path</span><span class="o">::</span><span class="n">new</span><span class="p">(</span><span class="s">&quot;src/lib.rs.in&quot;</span><span class="p">);</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">dst</span> <span class="o">=</span> <span class="nb">Path</span><span class="o">::</span><span class="n">new</span><span class="p">(</span><span class="o">&amp;</span><span class="n">out_dir</span><span class="p">).</span><span class="n">join</span><span class="p">(</span><span class="s">&quot;lib.rs&quot;</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="k">mut</span> <span class="n">registry</span> <span class="o">=</span> <span class="n">syntex</span><span class="o">::</span><span class="n">Registry</span><span class="o">::</span><span class="n">new</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">serde_codegen</span><span class="o">::</span><span class="n">register</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">registry</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">registry</span><span class="p">.</span><span class="n">expand</span><span class="p">(</span><span class="s">&quot;&quot;</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">src</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">dst</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#[cfg(not(feature = </span><span class="s">&quot;with_syntex&quot;</span><span class="cp">))]</span>
+</span><span class='line'><span class="kn">mod</span> <span class="n">inner</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">pub</span> <span class="k">fn</span> <span class="n">main</span><span class="p">()</span> <span class="p">{}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">pub</span> <span class="k">fn</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">inner</span><span class="o">::</span><span class="n">main</span><span class="p">()</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Finally, <code>src/lib.rs</code> is updated to:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="cp">#[cfg_attr(feature = </span><span class="s">&quot;nightly&quot;</span><span class="cp">, feature(plugin))]</span>
+</span><span class='line'><span class="cp">#[cfg_attr(feature = </span><span class="s">&quot;nightly&quot;</span><span class="cp">, plugin(serde_macros))]</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">serde</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#[cfg(feature = </span><span class="s">&quot;nightly&quot;</span><span class="cp">)]</span>
+</span><span class='line'><span class="n">include</span><span class="o">!</span><span class="p">(</span><span class="s">&quot;lib.rs.in&quot;</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#[cfg(feature = </span><span class="s">&quot;with_syntex&quot;</span><span class="cp">)]</span>
+</span><span class='line'><span class="n">include</span><span class="o">!</span><span class="p">(</span><span class="n">concat</span><span class="o">!</span><span class="p">(</span><span class="n">env</span><span class="o">!</span><span class="p">(</span><span class="s">&quot;OUT_DIR&quot;</span><span class="p">),</span> <span class="s">&quot;/lib.rs&quot;</span><span class="p">));</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Then most development can happen with using the Nightly Rust and
+<code>cargo build --no-default-features --features nightly</code> for better error
+messages, but downstream consumers can use Stable Rust without worry.</p>
+
+<h2>Downside 2: Macros in Macros</h2>
+
+<p>Syntex can only expand macros inside macros it knows about, and it doesn&rsquo;t know
+about the builtin macros. This is because a lot of the stable macros are using
+unstable features under the covers. So unfortunately if you&rsquo;re using a library
+like the quasiquoting library <a href="https://github.com/erickt/rust-quasi">quasi</a>,
+you cannot write:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="kd">let</span> <span class="n">exprs</span> <span class="o">=</span> <span class="n">vec</span><span class="o">!</span><span class="p">[</span><span class="n">quote_expr</span><span class="o">!</span><span class="p">(</span><span class="n">cx</span><span class="p">,</span> <span class="mi">1</span> <span class="o">+</span> <span class="mi">2</span><span class="p">)];</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Instead you have to pull out the syntex macros into a separate variable:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="kd">let</span> <span class="n">expr</span> <span class="o">=</span> <span class="n">quote_expr</span><span class="o">!</span><span class="p">(</span><span class="n">cx</span><span class="p">,</span> <span class="mi">1</span> <span class="o">+</span> <span class="mi">1</span><span class="p">);</span>
+</span><span class='line'><span class="kd">let</span> <span class="n">exprs</span> <span class="o">=</span> <span class="n">vec</span><span class="o">!</span><span class="p">[</span><span class="n">e</span><span class="p">];</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>Downside 3: Compile Times</h2>
+
+<p>Syntex can take a while to compile. It may be possible to optimize this, but
+that may be difficult while keeping compatibility with <code>libsyntax</code>.</p>
+
+<hr />
+
+<p>That&rsquo;s <code>v0.4.0</code>. I hope you enjoy it! Please let me know if you run into any
+<a href="https://github.com/serde-rs/serde/issues">problems</a>.</p>
+
+<h2>Release Notes</h2>
+
+<p>Here are other things that came with this version:</p>
+
+<ul>
+<li>Added field annotation to enable renaming fields for different backends
+<a href="https://github.com/serde-rs/serde/pull/69">#69</a>. For example:</li>
+</ul>
+
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">struct</span> <span class="n">Point</span> <span class="p">{</span>
+</span><span class='line'>  <span class="cp">#[serde(rename=</span><span class="s">&quot;X&quot;</span><span class="cp">)]</span>
+</span><span class='line'>  <span class="n">x</span><span class="o">:</span> <span class="kt">u32</span><span class="p">,</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="cp">#[serde(rename(json=</span><span class="s">&quot;the-x&quot;</span><span class="cp">, xml=</span><span class="s">&quot;X&quot;</span><span class="cp">)]</span>
+</span><span class='line'>  <span class="n">y</span><span class="o">:</span> <span class="kt">u32</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>Faster JSON string parsing <a href="https://github.com/serde-rs/serde/pull/71">#71</a>.</li>
+<li>Add a <code>LineColIterator</code> that tracks line and column information for
+deserializers <a href="https://github.com/serde-rs/serde/pull/58">#58</a>.</li>
+</ul>
+
+
+<p>Bug Fixes:</p>
+
+<ul>
+<li>Make sure that -0.0 gets serialized as &ldquo;-0.0&rdquo;
+<a href="https://github.com/serde-rs/serde/commit/f0c87fb">f0c87fb</a>.</li>
+<li>Missing field errors displayed original field name instead of renamed
+<a href="https://github.com/serde-rs/serde/pull/64">#64</a>.</li>
+</ul>
+
+
+<p>A special thanks to everyone that helped with this release:</p>
+
+<ul>
+<li>Alex Crichton</li>
+<li>Andrew Poelstra</li>
+<li>Hugo Duncan</li>
+<li>Kang Seonghoon</li>
+<li>Oliver Schneider</li>
+<li>Sebastian Thiel</li>
+<li>Steven Fackler</li>
+<li>derhaskell</li>
+</ul>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -6451,228 +6874,6 @@ themselves a weekend diving through the OS.</p>
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/11/13/benchmarks-2/">Rewriting Rust Serialization, Part 2.2: More Benchmarks</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-11-13T09:07:36-08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>13</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>9:07 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>Back to the benchmarks! I got some great comments on
-<a href="https://www.reddit.com/r/rust/comments/2lzc9n/rust_serialization_part_21_now_with_more/">reddit</a>,
-So I wanted to do another post to update my numbers. Here&rsquo;s what I changed:</p>
-
-<ul>
-<li>I wasn&rsquo;t consistent on whether or not the serialization benchmarks included
-Some tests are including the allocation of a buffer to write into. I&rsquo;ve
-  changed it so most are reusing one, which speeds everything up (especially
-capnproto-rust!). This does depend on
-<a href="https://github.com/rust-lang/rust/pull/18885">#18885</a> landing though.</li>
-<li>I&rsquo;ve added <a href="https://github.com/TyOverby/bincode">bincode</a>, which serializes
-values as raw bytes. Quite speedy too! Not nearly as fast as Cap&#8217;n Proto though.</li>
-<li>I&rsquo;ve changed <code>C++</code> and <code>Rust</code> JSON tests to serialize enums as uints.</li>
-<li>I added the time it takes to create the populate the structures. I&rsquo;m betting
-  the reason the Rust numbers are so high is that we&rsquo;re allocating strings. Not
-sure if the other languages are able to avoid that allocation.</li>
-</ul>
-
-
-<hr />
-
-<p>JSON:</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library         </th>
-<th> population (ns) </th>
-<th> serialization (MB/s) </th>
-<th> deserialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> Rust     </td>
-<td> serialize::json </td>
-<td> 1127            </td>
-<td> 117                  </td>
-<td> 26                     </td>
-</tr>
-<tr>
-<td> C++      </td>
-<td> rapidjson (dom) </td>
-<td> 546             </td>
-<td> 281                  </td>
-<td> 144                    </td>
-</tr>
-<tr>
-<td> C++      </td>
-<td> rapidjson (dom) </td>
-<td> 546             </td>
-<td> 281                  </td>
-<td> 181                    </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> encoding/json   </td>
-<td> 343             </td>
-<td> 63.99                </td>
-<td> 22.46                  </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> ffjson          </td>
-<td> 343             </td>
-<td> 144.60               </td>
-<td> (not supported)        </td>
-</tr>
-</tbody>
-</table>
-
-
-<hr />
-
-<p>Cap&#8217;n Proto:</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library                   </th>
-<th> population (ns) </th>
-<th> serialization (MB/s) </th>
-<th> deserialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust (unpacked) </td>
-<td> 325             </td>
-<td> 4977                 </td>
-<td> 2251                   </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust (packed)   </td>
-<td> 325             </td>
-<td> 398                  </td>
-<td> 246                    </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto              </td>
-<td> 2368            </td>
-<td> 2226.71              </td>
-<td> 450                    </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto (zero copy)  </td>
-<td> 2368            </td>
-<td> 2226.71              </td>
-<td> 1393.3                 </td>
-</tr>
-</tbody>
-</table>
-
-
-<hr />
-
-<p>Protocol Buffers:</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library       </th>
-<th> population (ns) </th>
-<th> serialization (MB/s) </th>
-<th> deserialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> Rust     </td>
-<td> rust-protobuf </td>
-<td> 1041            </td>
-<td> 370                  </td>
-<td> 118                    </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> goprotobuf    </td>
-<td> 1133            </td>
-<td> 138.27               </td>
-<td> 91.18                  </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> gogoprotobuf  </td>
-<td> 343             </td>
-<td> 472.69               </td>
-<td> 295.33                 </td>
-</tr>
-</tbody>
-</table>
-
-
-<hr />
-
-<p>Misc:</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library      </th>
-<th> population (ns) </th>
-<th> serialization (MB/s) </th>
-<th> deserialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> Rust     </td>
-<td> rust-msgpack </td>
-<td> 1143            </td>
-<td> 454                  </td>
-<td> 144                    </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> bincode      </td>
-<td> 1143            </td>
-<td> 1149                 </td>
-<td> 82                     </td>
-</tr>
-</tbody>
-</table>
-
-
-<p>Anyone want to add more C/Go/Rust/Java/etc benchmarks?</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/2">&larr; Older</a>
@@ -6688,6 +6889,10 @@ sure if the other languages are able to avoid that allocation.</li>
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/05/18/serde-0-dot-4-0-now-supports-macros-in-stable-rust/">Serde 0.4.0 - Syntax Extensions in Stable Rust and More!</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/04/12/serde-0-dot-3-1-now-compatible-with-beta/">Serde 0.3.1 - Now Compatible With Beta! Plus Aster and Quasi Updates</a>
       </li>
     
@@ -6701,10 +6906,6 @@ sure if the other languages are able to avoid that allocation.</li>
     
       <li class="post">
         <a href="/blog/2015/02/09/syntex-syntex-extensions-for-rust-1-dot-0/">Syntex: Syntax Extensions for Rust 1.0</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2014/12/13/performance-digression/">Rewriting Rust Serialization, Part 3.1: Another Performance Digression</a>
       </li>
     
   </ul>

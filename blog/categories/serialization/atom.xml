@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Serialization | Chasing Rabbits]]></title>
   <link href="http://erickt.github.io/blog/categories/serialization/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2015-04-12T12:13:36-07:00</updated>
+  <updated>2015-05-19T08:44:32-07:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -12,6 +12,272 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Serde 0.4.0 - Syntax Extensions in Stable Rust and More!]]></title>
+    <link href="http://erickt.github.io/blog/2015/05/18/serde-0-dot-4-0-now-supports-macros-in-stable-rust/"/>
+    <updated>2015-05-18T07:57:19-07:00</updated>
+    <id>http://erickt.github.io/blog/2015/05/18/serde-0-dot-4-0-now-supports-macros-in-stable-rust</id>
+    <content type="html"><![CDATA[<p>Hello Internet! I&rsquo;m pleased to announce
+<a href="https://github.com/serde-rs/serde">serde</a> 0.4.0, which now supports many new
+features with help from our growing serde community. The largest is now serde
+supports syntax extensions in stable Rust by way of
+<a href="https://github.com/erickt/rust-syntex">syntex</a>. syntex is a fork of Rust&rsquo;s
+parser library libsyntax that has been modified to enable code generation.
+serde uses it along with a
+<a href="http://doc.crates.io/build-script.html">Cargo build script</a> to expand the
+<code>#[derive(Serialize, Deserialize)]</code> decorator annotations. Here&rsquo;s how to use
+it.</p>
+
+<p>First, lets start with a simple serde 0.3.x project that&rsquo;s forced to use
+nightly because it uses <code>serde_macros</code>. The <code>Cargo.toml</code> is:</p>
+
+<pre><code class="toml">[package]
+name = "hello_world"
+versio = "0.1.0"
+authors = ["Erick Tryzelaar &lt;erick.tryzelaar@gmail.com&gt;]
+license = "MIT/Apache-2.0"
+
+[dependencies]
+serde = "*"
+serde_macros = "*"
+</code></pre>
+
+<p>And the actual library is <code>src/lib.rs</code>:</p>
+
+<pre><code class="rust">#[feature(custom_derive, plugin)]
+#[plugin(serde_macros)]
+
+extern crate serde;
+
+#[derive(Serialize, Deserialize)]
+pub struct Point {
+    x: u32,
+    y: u32,
+}
+</code></pre>
+
+<p>In order to use Stable Rust, we can use the new <code>serde_codegen</code>. Our strategy
+is to split our input into two files. The first is the entry point Cargo will
+use to compile the library, <code>src/lib.rs</code>. The second is a template that
+contains the macros, <code>src/lib.rs.in</code>. It will be expanded into
+<code>$OUT_DIR/lib.rs</code>, which is included in <code>src/lib.rs</code>. So <code>src/lib.rs</code> looks
+like:</p>
+
+<pre><code class="rust">extern crate serde;
+
+include!(concat!(env!("OUT_DIR"), "/lib.rs"));
+</code></pre>
+
+<p><code>src/lib.rs.in</code> then just looks like:</p>
+
+<pre><code class="rust">#[derive(Serialize, Deserialize)]
+pub struct Point {
+    x: u32,
+    y: u32,
+}
+</code></pre>
+
+<p>In order to generate the <code>$OUT_DIR/lib.rs</code>, we&rsquo;ll use a Cargo build script.
+We&rsquo;ll configure <code>Cargo.toml</code> with:</p>
+
+<pre><code class="toml">[package]
+name = "hello_world"
+versio = "0.1.0"
+authors = ["Erick Tryzelaar &lt;erick.tryzelaar@gmail.com&gt;]
+license = "MIT/Apache-2.0"
+build = "build.rs"
+
+[build-dependencies]
+syntex = "*"
+serde_codegen = "*"
+
+[dependencies]
+serde = "*"
+</code></pre>
+
+<p>Finally, the <code>build.rs</code> script itself uses <code>syntex</code> to expand the syntax
+extensions:</p>
+
+<pre><code class="rust">extern crate syntex;
+extern crate serde_codegen;
+
+use std::env;
+use std::path::Path;
+
+fn main() {
+    let out_dir = env::var_os("OUT_DIR").unwrap();
+
+    let src = Path::new("src/lib.rs.in");
+    let dst = Path::new(&amp;out_dir).join("lib.rs");
+
+    let mut registry = syntex::Registry::new();
+
+    serde_codegen::register(&amp;mut registry);
+    registry.expand("", &amp;src, &amp;dst).unwrap();
+}
+</code></pre>
+
+<h2>Downside 1: Error Locations</h2>
+
+<p>While <code>syntex</code> is quite powerful, there are a few major downsides. Rust does
+not yet support the ability for a generated file to provide error location
+information from a template file. This means that tracking down errors requires
+manually looking at the generated code and trying to identify where the error
+in the template. However, there is a workaround.  It&rsquo;s actually not that
+difficult to support <code>syntex</code> and the Rust Nightly compiler plugins. To update
+our example, we&rsquo;ll change the <code>Cargo.toml</code> to:</p>
+
+<pre><code class="toml">[package]
+name = "hello_world"
+versio = "0.1.0"
+authors = ["Erick Tryzelaar &lt;erick.tryzelaar@gmail.com&gt;]
+license = "MIT/Apache-2.0"
+build = "build.rs"
+
+[features]
+default = ["with_syntex"]
+nightly = ["serde_macros"]
+with_syntex = ["serde_codegen"]
+
+[build-dependencies]
+syntex = { version = "*", optional = true }
+serde_codegen = { version = "*", optional = true }
+
+[dependencies]
+serde = "*"
+serde_macros = { version = "*", optional = true }
+</code></pre>
+
+<p>Then the <code>build.rs</code> is changed to optionally expand the macros in our template:</p>
+
+<pre><code class="rust">#[cfg(feature = "with_syntex")]
+mod inner {
+    extern crate syntex;
+    extern crate serde_codegen;
+
+    use std::env;
+    use std::path::Path;
+
+    pub fn main() {
+        let out_dir = env::var_os("OUT_DIR").unwrap();
+
+        let src = Path::new("src/lib.rs.in");
+        let dst = Path::new(&amp;out_dir).join("lib.rs");
+
+        let mut registry = syntex::Registry::new();
+
+        serde_codegen::register(&amp;mut registry);
+        registry.expand("", &amp;src, &amp;dst).unwrap();
+    }
+}
+
+#[cfg(not(feature = "with_syntex"))]
+mod inner {
+    pub fn main() {}
+}
+
+pub fn main() {
+    inner::main()
+}
+</code></pre>
+
+<p>Finally, <code>src/lib.rs</code> is updated to:</p>
+
+<pre><code class="rust">#[cfg_attr(feature = "nightly", feature(plugin))]
+#[cfg_attr(feature = "nightly", plugin(serde_macros))]
+
+extern crate serde;
+
+#[cfg(feature = "nightly")]
+include!("lib.rs.in");
+
+#[cfg(feature = "with_syntex")]
+include!(concat!(env!("OUT_DIR"), "/lib.rs"));
+</code></pre>
+
+<p>Then most development can happen with using the Nightly Rust and
+<code>cargo build --no-default-features --features nightly</code> for better error
+messages, but downstream consumers can use Stable Rust without worry.</p>
+
+<h2>Downside 2: Macros in Macros</h2>
+
+<p>Syntex can only expand macros inside macros it knows about, and it doesn&rsquo;t know
+about the builtin macros. This is because a lot of the stable macros are using
+unstable features under the covers. So unfortunately if you&rsquo;re using a library
+like the quasiquoting library <a href="https://github.com/erickt/rust-quasi">quasi</a>,
+you cannot write:</p>
+
+<pre><code class="rust">let exprs = vec![quote_expr!(cx, 1 + 2)];
+</code></pre>
+
+<p>Instead you have to pull out the syntex macros into a separate variable:</p>
+
+<pre><code class="rust">let expr = quote_expr!(cx, 1 + 1);
+let exprs = vec![e];
+</code></pre>
+
+<h2>Downside 3: Compile Times</h2>
+
+<p>Syntex can take a while to compile. It may be possible to optimize this, but
+that may be difficult while keeping compatibility with <code>libsyntax</code>.</p>
+
+<hr />
+
+<p>That&rsquo;s <code>v0.4.0</code>. I hope you enjoy it! Please let me know if you run into any
+<a href="https://github.com/serde-rs/serde/issues">problems</a>.</p>
+
+<h2>Release Notes</h2>
+
+<p>Here are other things that came with this version:</p>
+
+<ul>
+<li>Added field annotation to enable renaming fields for different backends
+<a href="https://github.com/serde-rs/serde/pull/69">#69</a>. For example:</li>
+</ul>
+
+
+<pre><code class="rust">struct Point {
+  #[serde(rename="X")]
+  x: u32,
+
+  #[serde(rename(json="the-x", xml="X")]
+  y: u32,
+}
+</code></pre>
+
+<ul>
+<li>Faster JSON string parsing <a href="https://github.com/serde-rs/serde/pull/71">#71</a>.</li>
+<li>Add a <code>LineColIterator</code> that tracks line and column information for
+deserializers <a href="https://github.com/serde-rs/serde/pull/58">#58</a>.</li>
+</ul>
+
+
+<p>Bug Fixes:</p>
+
+<ul>
+<li>Make sure that -0.0 gets serialized as &ldquo;-0.0&rdquo;
+<a href="https://github.com/serde-rs/serde/commit/f0c87fb">f0c87fb</a>.</li>
+<li>Missing field errors displayed original field name instead of renamed
+<a href="https://github.com/serde-rs/serde/pull/64">#64</a>.</li>
+</ul>
+
+
+<p>A special thanks to everyone that helped with this release:</p>
+
+<ul>
+<li>Alex Crichton</li>
+<li>Andrew Poelstra</li>
+<li>Hugo Duncan</li>
+<li>Kang Seonghoon</li>
+<li>Oliver Schneider</li>
+<li>Sebastian Thiel</li>
+<li>Steven Fackler</li>
+<li>derhaskell</li>
+</ul>
+
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Serde 0.3.1 - Now Compatible With Beta! Plus Aster and Quasi Updates]]></title>
@@ -1242,844 +1508,6 @@ help speed things up.</p>
 <hr />
 
 <p>That was taking a while, so until next time!</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Rewriting Rust Serialization, Part 3: Introducing Serde]]></title>
-    <link href="http://erickt.github.io/blog/2014/12/13/rewriting-rust-serialization/"/>
-    <updated>2014-12-13T14:40:18-08:00</updated>
-    <id>http://erickt.github.io/blog/2014/12/13/rewriting-rust-serialization</id>
-    <content type="html"><![CDATA[<p>There&rsquo;s been a long digression over the past month
-(<a href="http://erickt.github.io/blog/2014/11/19/adventures-in-debugging-a-potential-osx-kernel-bug/">possible kernel bugs</a>,
-<a href="http://erickt.github.io/blog/2014/11/22/benchmarking-is-confusing/">benchmarking Writers</a>,
-and
-<a href="https://github.com/rust-lang/rust/pull/19574">don&rsquo;t believe in magic, folks</a>), but I&rsquo;m back
-into serialization. Woo! Here&rsquo;s
-<a href="http://erickt.github.io/blog/2014/10/28/serialization/">part 1</a>
-<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2</a>,
-<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2.1</a>, and
-<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2.2</a> if you need
-to catch up.</p>
-
-<p>So <code>libserialize</code> has some pretty serious downsides. It&rsquo;s slow, it&rsquo;s got this
-weird recursive closure thing going on, and it can&rsquo;t even represent enum types
-like a <code>serialize::json::Json</code>. We need a new solution, and while I was at it,
-we ended up with two: <a href="https://github.com/erickt/rust-serde">serde</a> and
-<a href="https://github.com/erickt/rust-serde/tree/master/serde2">serde2</a>. Both are
-different approaches to trying to address these problems. The biggest one being
-the type representation problem.</p>
-
-<h2>Serde Version 1</h2>
-
-<h3>Deserialization</h3>
-
-<p>I want to start with deserialization first, as that&rsquo;s really the interesting
-bit. To repeat myself a little bit from
-<a href="https://erickt.github.io/blog/2014/10/28/serialization/">part 1</a>,
-here is a generic json <code>Value</code> enum:</p>
-
-<pre><code class="rust">pub enum Value {
-    I64(i64),
-    U64(u64),
-    F64(f64),
-    String(String),
-    Boolean(bool),
-    Array(Vec&lt;Value&gt;),
-    Object(TreeMap&lt;String, Value&gt;),
-    Null,
-}
-</code></pre>
-
-<p>To deserialize a string like <code>[1, true]</code> into
-<code>Array(vec![I64(1), Boolean(true)])</code>, we need to peek at one character ahead
-(ignoring whitespace) in order to discover what is the type of the next value.
-We then can use that knowledge to pick the right variant, and parse the next
-value correctly. While I haven&rsquo;t formally studied this stuff, I believe this
-can be more formally stated as <code>Value</code> requires at least a LL(1) grammar,
-but since <code>libserialize</code> supports no lookahead, so at most it can handle LL(0)
-grammars.</p>
-
-<p>Since I was thinking of this problem in terms of grammars, I wanted to take a
-page out of their book and implement generic deserialization in this style.
-<code>serde::de::Deserializer</code>s are then an <code>Iterator&lt;serde::de::Token&gt;</code> lexer that
-produces a token stream, and <code>serde::de::Deserialize</code>s are a parser that
-consumes this stream to produce a value. Here&rsquo;s <code>serde::de::Token</code>, which can
-represent nearly all the rust types:</p>
-
-<pre><code class="rust">pub enum Token {
-    Null,
-    Bool(bool),
-    Int(int),
-    I8(i8),
-    I16(i16),
-    I32(i32),
-    I64(i64),
-    Uint(uint),
-    U8(u8),
-    U16(u16),
-    U32(u32),
-    U64(u64),
-    F32(f32),
-    F64(f64),
-    Char(char),
-    Str(&amp;'static str),
-    String(String),
-
-    Option(bool),     // true if the option has a value
-
-    TupleStart(uint), // estimate of the number of values
-
-    StructStart(
-        &amp;'static str, // the struct name
-        uint,         // estimate of the number of (string, value) pairs
-    ),
-
-    EnumStart(
-        &amp;'static str, // the enum name
-        &amp;'static str, // the variant name
-        uint          // estimate of the number of values
-    ),
-
-    SeqStart(uint), // number of values
-
-    MapStart(uint), // number of (value, value) pairs
-
-    End,
-}
-</code></pre>
-
-<p>The <code>serde::de::Deserialize</code> stream must generate tokens that follow this
-grammar:</p>
-
-<pre><code class="antlr">value ::= Null
-        | Bool
-        | Int
-        | ...
-        | option
-        | tuple
-        | struct
-        | enum
-        | sequence
-        | map
-        ;
-
-option ::= Option value
-         | Option
-         ;
-
-tuple := TupleStart value* End;
-
-struct := StructStart (Str value)* End;
-
-enum := EnumStart value* End;
-
-sequence := SeqStart value* End;
-
-map := MapStart (value value)* End;
-</code></pre>
-
-<p>For performance reasons, there is no separator in the compound grammar.</p>
-
-<p>Finishing up this section are the actual traits, <code>Deserialize</code> and <code>Deserializer</code>:</p>
-
-<pre><code class="rust">pub trait Deserialize&lt;D: Deserializer&lt;E&gt;, E&gt; {
-    fn deserialize(d: &amp;mut D) -&gt; Result&lt;Self, E&gt; {
-        let token = try!(d.expect_token());
-        Deserialize::deserialize_token(d, token)
-    }
-
-    fn deserialize_token(d: &amp;mut D, token: Token) -&gt; Result&lt;Self, E&gt;;
-}
-
-pub trait Deserializer&lt;E&gt;: Iterator&lt;Result&lt;Token, E&gt;&gt; {
-    /// Called when a `Deserialize` expected more tokens, but the
-    /// `Deserializer` was empty.
-    fn end_of_stream_error(&amp;mut self) -&gt; E;
-
-    /// Called when a `Deserializer` was unable to properly parse the stream.
-    fn syntax_error(&amp;mut self, token: Token, expected: &amp;'static [TokenKind]) -&gt; E;
-
-    /// Called when a named structure or enum got a name that it didn't expect.
-    fn unexpected_name_error(&amp;mut self, token: Token) -&gt; E;
-
-    /// Called when a value was unable to be coerced into another value.
-    fn conversion_error(&amp;mut self, token: Token) -&gt; E;
-
-    /// Called when a `Deserialize` structure did not deserialize a field
-    /// named `field`.
-    fn missing_field&lt;
-        T: Deserialize&lt;Self, E&gt;
-    &gt;(&amp;mut self, field: &amp;'static str) -&gt; Result&lt;T, E&gt;;
-
-    /// Called when a `Deserialize` has decided to not consume this token.
-    fn ignore_field(&amp;mut self, _token: Token) -&gt; Result&lt;(), E&gt; {
-        let _: IgnoreTokens = try!(Deserialize::deserialize(self));
-        Ok(())
-    }
-
-    #[inline]
-    fn expect_token(&amp;mut self) -&gt; Result&lt;Token, E&gt; {
-        self.next().unwrap_or_else(|| Err(self.end_of_stream_error()))
-    }
-
-    ...
-}
-</code></pre>
-
-<p>The <code>Deserialize</code> trait is kept pretty slim, and is how lookahead is
-implemented. <code>Deserializer</code> is an enhanced <code>Iterator&lt;Result&lt;Token, E&gt;&gt;</code>, with
-many helpful default methods. Here are them in action. First we&rsquo;ll start with
-what&rsquo;s probably the simplest <code>Deserializer</code>, which just wraps a <code>Vec&lt;Token&gt;</code>:</p>
-
-<pre><code class="rust">enum Error {
-    EndOfStream,
-    SyntaxError(Vec&lt;TokenKind&gt;),
-    UnexpectedName,
-    ConversionError,
-    MissingField(&amp;'static str),
-}
-
-struct TokenDeserializer&lt;Iter&gt; {
-    tokens: Iter,
-}
-
-impl&lt;Iter: Iterator&lt;Token&gt;&gt; TokenDeserializer&lt;Iter&gt; {
-    fn new(tokens: Iter) -&gt; TokenDeserializer&lt;Iter&gt; {
-        TokenDeserializer {
-            tokens: tokens,
-        }
-    }
-}
-
-impl&lt;Iter: Iterator&lt;Token&gt;&gt; Iterator&lt;Result&lt;Token, Error&gt;&gt; for TokenDeserializer&lt;Iter&gt; {
-    fn next(&amp;mut self) -&gt; option::Option&lt;Result&lt;Token, Error&gt;&gt; {
-        self.tokens.next().map(|token| Ok(token))
-    }
-}
-
-impl&lt;Iter: Iterator&lt;Token&gt;&gt; Deserializer&lt;Error&gt; for TokenDeserializer&lt;Iter&gt; {
-    fn end_of_stream_error(&amp;mut self) -&gt; Error {
-        Error::EndOfStream
-    }
-
-    fn syntax_error(&amp;mut self, _token: Token, expected: &amp;[TokenKind]) -&gt; Error {
-        Error::SyntaxError(expected.to_vec())
-    }
-
-    fn unexpected_name_error(&amp;mut self, _token: Token) -&gt; Error {
-        Error::UnexpectedName
-    }
-
-    fn conversion_error(&amp;mut self, _token: Token) -&gt; Error {
-        Error::ConversionError
-    }
-
-    #[inline]
-    fn missing_field&lt;
-        T: Deserialize&lt;TokenDeserializer&lt;Iter&gt;, Error&gt;
-    &gt;(&amp;mut self, field: &amp;'static str) -&gt; Result&lt;T, Error&gt; {
-        Err(Error::MissingField(field))
-    }
-}
-</code></pre>
-
-<p>Overall it should be pretty straight forward. As usual, error handling makes
-things a bit noisier, but hopefully it&rsquo;s not too onerous. Next is a
-<code>Deserialize</code> for <code>bool</code>:</p>
-
-<pre><code class="rust">impl&lt;D: Deserializer&lt;E&gt;, E&gt; Deserialize&lt;D, E&gt; for bool {
-    #[inline]
-    fn deserialize_token(d: &amp;mut D, token: Token) -&gt; Result&lt;bool, E&gt; {
-        d.expect_bool(token)
-    }
-}
-
-pub trait Deserializer&lt;E&gt;: Iterator&lt;Result&lt;Token, E&gt;&gt; {
-    ...
-
-    #[inline]
-    fn expect_bool(&amp;mut self, token: Token) -&gt; Result&lt;bool, E&gt; {
-        match token {
-            Token::Bool(value) =&gt; Ok(value),
-            token =&gt; {
-                static EXPECTED_TOKENS: &amp;'static [TokenKind] = &amp;[
-                    TokenKind::BoolKind,
-                ];
-                Err(self.syntax_error(token, EXPECTED_TOKENS))
-            }
-        }
-    }
-
-
-    ...
-}
-</code></pre>
-
-<p>Simple! Sequences are a bit more tricky. Here&rsquo;s <code>Deserialize</code> a <code>Vec&lt;T&gt;</code>. We
-use a helper adaptor <code>SeqDeserializer</code> to deserialize from all types that
-implement <code>FromIterator</code>:</p>
-
-<pre><code class="rust">impl&lt;
-    D: Deserializer&lt;E&gt;,
-    E,
-    T: Deserialize&lt;D ,E&gt;
-&gt; Deserialize&lt;D, E&gt; for Vec&lt;T&gt; {
-    #[inline]
-    fn deserialize_token(d: &amp;mut D, token: Token) -&gt; Result&lt;Vec&lt;T&gt;, E&gt; {
-        d.expect_seq(token)
-    }
-}
-
-pub trait Deserializer&lt;E&gt;: Iterator&lt;Result&lt;Token, E&gt;&gt; {
-    ...
-
-    #[inline]
-    fn expect_seq&lt;
-        T: Deserialize&lt;Self, E&gt;,
-        C: FromIterator&lt;T&gt;
-    &gt;(&amp;mut self, token: Token) -&gt; Result&lt;C, E&gt; {
-        let len = try!(self.expect_seq_start(token));
-        let mut err = None;
-
-        let collection: C = {
-            let d = SeqDeserializer {
-                d: self,
-                len: len,
-                err: &amp;mut err,
-            };
-
-            d.collect()
-        };
-
-        match err {
-            Some(err) =&gt; Err(err),
-            None =&gt; Ok(collection),
-        }
-    }
-
-    ...
-}
-
-struct SeqDeserializer&lt;'a, D: 'a, E: 'a&gt; {
-    d: &amp;'a mut D,
-    len: uint,
-    err: &amp;'a mut Option&lt;E&gt;,
-}
-
-impl&lt;
-    'a,
-    D: Deserializer&lt;E&gt;,
-    E,
-    T: Deserialize&lt;D, E&gt;
-&gt; Iterator&lt;T&gt; for SeqDeserializer&lt;'a, D, E&gt; {
-    #[inline]
-    fn next(&amp;mut self) -&gt; option::Option&lt;T&gt; {
-        match self.d.expect_seq_elt_or_end() {
-            Ok(next) =&gt; {
-                self.len -= 1;
-                next
-            }
-            Err(err) =&gt; {
-                *self.err = Some(err);
-                None
-            }
-        }
-    }
-
-    #[inline]
-    fn size_hint(&amp;self) -&gt; (uint, option::Option&lt;uint&gt;) {
-        (self.len, Some(self.len))
-    }
-}
-</code></pre>
-
-<p>Last is a struct deserializer. This relies on a simple state machine in order
-to deserialize from out of order maps:</p>
-
-<pre><code class="rust">struct Foo {
-    a: (),
-    b: uint,
-    c: TreeMap&lt;String, Option&lt;char&gt;&gt;,
-}
-
-impl&lt;
-    D: Deserializer&lt;E&gt;,
-    E
-&gt; Deserialize&lt;D, E&gt; for Foo {
-    #[inline]
-    fn deserialize_token(d: &amp;mut D, token: Token) -&gt; Result&lt;Foo, E&gt; {
-        try!(d.expect_struct_start(token, "Foo"));
-
-        let mut a = None;
-        let mut b = None;
-        let mut c = None;
-
-        static FIELDS: &amp;'static [&amp;'static str] = &amp;["a", "b", "c"];
-
-        loop {
-            let idx = match try!(d.expect_struct_field_or_end(FIELDS)) {
-                Some(idx) =&gt; idx,
-                None =&gt; { break; }
-            };
-
-            match idx {
-                Some(0) =&gt; { a = Some(try!(d.expect_struct_value())); }
-                Some(1) =&gt; { b = Some(try!(d.expect_struct_value())); }
-                Some(2) =&gt; { c = Some(try!(d.expect_struct_value())); }
-                Some(_) =&gt; unreachable!(),
-                None =&gt; { let _: IgnoreTokens = try!(Deserialize::deserialize(d)); }
-            }
-        }
-
-        Ok(Foo { a: a.unwrap(), b: b.unwrap(), c: c.unwrap() })
-    }
-}
-</code></pre>
-
-<p>It&rsquo;s more complicated than <code>libserialize</code>&rsquo;s struct parsing, but it performs
-much better because it can handle out of order maps without buffering tokens.</p>
-
-<h3>Serialization</h3>
-
-<p>Serialization&rsquo;s story is a much simpler one. Conceptually
-<code>serde::ser::Serializer</code>/<code>serde::ser::Serialize</code> are inspired by the
-deserialization story, but we don&rsquo;t need the tagged tokens because we already
-know the types. Here are the traits:</p>
-
-<pre><code class="rust">pub trait Serialize&lt;S: Serializer&lt;E&gt;, E&gt; {
-    fn serialize(&amp;self, s: &amp;mut S) -&gt; Result&lt;(), E&gt;;
-}
-
-pub trait Serializer&lt;E&gt; {
-    fn serialize_null(&amp;mut self) -&gt; Result&lt;(), E&gt;;
-
-    fn serialize_bool(&amp;mut self, v: bool) -&gt; Result&lt;(), E&gt;;
-
-    #[inline]
-    fn serialize_int(&amp;mut self, v: int) -&gt; Result&lt;(), E&gt; {
-        self.serialize_i64(v as i64)
-    }
-
-    #[inline]
-    fn serialize_i8(&amp;mut self, v: i8) -&gt; Result&lt;(), E&gt; {
-        self.serialize_i64(v as i64)
-    }
-
-    #[inline]
-    fn serialize_i16(&amp;mut self, v: i16) -&gt; Result&lt;(), E&gt; {
-        self.serialize_i64(v as i64)
-    }
-
-    #[inline]
-    fn serialize_i32(&amp;mut self, v: i32) -&gt; Result&lt;(), E&gt; {
-        self.serialize_i64(v as i64)
-    }
-
-    #[inline]
-    fn serialize_i64(&amp;mut self, v: i64) -&gt; Result&lt;(), E&gt;;
-
-    #[inline]
-    fn serialize_uint(&amp;mut self, v: uint) -&gt; Result&lt;(), E&gt; {
-        self.serialize_u64(v as u64)
-    }
-
-    #[inline]
-    fn serialize_u8(&amp;mut self, v: u8) -&gt; Result&lt;(), E&gt; {
-        self.serialize_u64(v as u64)
-    }
-
-    #[inline]
-    fn serialize_u16(&amp;mut self, v: u16) -&gt; Result&lt;(), E&gt; {
-        self.serialize_u64(v as u64)
-    }
-
-    #[inline]
-    fn serialize_u32(&amp;mut self, v: u32) -&gt; Result&lt;(), E&gt; {
-        self.serialize_u64(v as u64)
-    }
-
-    #[inline]
-    fn serialize_u64(&amp;mut self, v: u64) -&gt; Result&lt;(), E&gt;;
-
-    #[inline]
-    fn serialize_f32(&amp;mut self, v: f32) -&gt; Result&lt;(), E&gt; {
-        self.serialize_f64(v as f64)
-    }
-
-    fn serialize_f64(&amp;mut self, v: f64) -&gt; Result&lt;(), E&gt;;
-
-    fn serialize_char(&amp;mut self, v: char) -&gt; Result&lt;(), E&gt;;
-
-    fn serialize_str(&amp;mut self, v: &amp;str) -&gt; Result&lt;(), E&gt;;
-
-    fn serialize_tuple_start(&amp;mut self, len: uint) -&gt; Result&lt;(), E&gt;;
-    fn serialize_tuple_elt&lt;
-        T: Serialize&lt;Self, E&gt;
-    &gt;(&amp;mut self, v: &amp;T) -&gt; Result&lt;(), E&gt;;
-    fn serialize_tuple_end(&amp;mut self) -&gt; Result&lt;(), E&gt;;
-
-    fn serialize_struct_start(&amp;mut self, name: &amp;str, len: uint) -&gt; Result&lt;(), E&gt;;
-    fn serialize_struct_elt&lt;
-        T: Serialize&lt;Self, E&gt;
-    &gt;(&amp;mut self, name: &amp;str, v: &amp;T) -&gt; Result&lt;(), E&gt;;
-    fn serialize_struct_end(&amp;mut self) -&gt; Result&lt;(), E&gt;;
-
-    fn serialize_enum_start(&amp;mut self, name: &amp;str, variant: &amp;str, len: uint) -&gt; Result&lt;(), E&gt;;
-    fn serialize_enum_elt&lt;
-        T: Serialize&lt;Self, E&gt;
-    &gt;(&amp;mut self, v: &amp;T) -&gt; Result&lt;(), E&gt;;
-    fn serialize_enum_end(&amp;mut self) -&gt; Result&lt;(), E&gt;;
-
-    fn serialize_option&lt;
-        T: Serialize&lt;Self, E&gt;
-    &gt;(&amp;mut self, v: &amp;Option&lt;T&gt;) -&gt; Result&lt;(), E&gt;;
-
-    fn serialize_seq&lt;
-        T: Serialize&lt;Self, E&gt;,
-        Iter: Iterator&lt;T&gt;
-    &gt;(&amp;mut self, iter: Iter) -&gt; Result&lt;(), E&gt;;
-
-    fn serialize_map&lt;
-        K: Serialize&lt;Self, E&gt;,
-        V: Serialize&lt;Self, E&gt;,
-        Iter: Iterator&lt;(K, V)&gt;
-    &gt;(&amp;mut self, iter: Iter) -&gt; Result&lt;(), E&gt;;
-}
-</code></pre>
-
-<p>There are many default methods, so only a handful of implementations need to be
-specified. Now lets look at how they are used. Here&rsquo;s a simple
-<code>AssertSerializer</code> that I use in my test suite to make sure I&rsquo;m serializing
-properly:</p>
-
-<pre><code class="rust">struct AssertSerializer&lt;Iter&gt; {
-    iter: Iter,
-}
-
-impl&lt;'a, Iter: Iterator&lt;Token&lt;'a&gt;&gt;&gt; AssertSerializer&lt;Iter&gt; {
-    fn new(iter: Iter) -&gt; AssertSerializer&lt;Iter&gt; {
-        AssertSerializer {
-            iter: iter,
-        }
-    }
-
-    fn serialize&lt;'b&gt;(&amp;mut self, token: Token&lt;'b&gt;) -&gt; Result&lt;(), Error&gt; {
-        let t = self.iter.next().unwrap();
-
-        assert_eq!(t, token);
-
-        Ok(())
-    }
-}
-
-impl&lt;'a, Iter: Iterator&lt;Token&lt;'a&gt;&gt;&gt; Serializer&lt;Error&gt; for AssertSerializer&lt;Iter&gt; {
-    fn serialize_null(&amp;mut self) -&gt; Result&lt;(), Error&gt; {
-        self.serialize(Token::Null)
-    }
-    fn serialize_bool(&amp;mut self, v: bool) -&gt; Result&lt;(), Error&gt; {
-        self.serialize(Token::Bool(v))
-    }
-    fn serialize_int(&amp;mut self, v: int) -&gt; Result&lt;(), Error&gt; {
-        self.serialize(Token::Int(v))
-    }
-    ...
-}
-</code></pre>
-
-<p>Implementing <code>Serialize</code> for values follows the same pattern. Here&rsquo;s <code>bool</code>:</p>
-
-<pre><code>impl&lt;S: Serializer&lt;E&gt;, E&gt; Serialize&lt;S, E&gt; for bool {
-    #[inline]
-    fn serialize(&amp;self, s: &amp;mut S) -&gt; Result&lt;(), E&gt; {
-        s.serialize_bool(*self)
-    }
-}
-</code></pre>
-
-<p><code>Vec&lt;T&gt;</code>:</p>
-
-<pre><code class="rust">impl&lt;
-    S: Serializer&lt;E&gt;,
-    E,
-    T: Serialize&lt;S, E&gt;
-&gt; Serialize&lt;S, E&gt; for Vec&lt;T&gt; {
-    #[inline]
-    fn serialize(&amp;self, s: &amp;mut S) -&gt; Result&lt;(), E&gt; {
-        s.serialize_seq(self.iter())
-    }
-}
-
-pub trait Serializer&lt;E&gt; {
-    ...
-
-    fn serialize_seq&lt;
-        T: Serialize&lt;AssertSerializer&lt;Iter&gt;, Error&gt;,
-        SeqIter: Iterator&lt;T&gt;
-    &gt;(&amp;mut self, mut iter: SeqIter) -&gt; Result&lt;(), Error&gt; {
-        let (len, _) = iter.size_hint();
-        try!(self.serialize(Token::SeqStart(len)));
-        for elt in iter {
-            try!(elt.serialize(self));
-        }
-        self.serialize(Token::SeqEnd)
-    }
-
-    ...
-}
-</code></pre>
-
-<p>And structs:</p>
-
-<pre><code class="rust">struct Foo {
-    a: (),
-    b: uint,
-    c: TreeMap&lt;String, Option&lt;char&gt;&gt;,
-}
-
-impl&lt;
-  S: Serializer&lt;E&gt;,
-  E
-&gt; Serialize&lt;S, E&gt; for Foo {
-    fn serialize(&amp;self, s: &amp;mut S) -&gt; Result&lt;(), E&gt; {
-        try!(s.serialize_struct_start("Foo", 2u));
-        try!(s.serialize_struct_elt("a", &amp;self.a));
-        try!(s.serialize_struct_elt("b", &amp;self.b));
-        try!(s.serialize_struct_elt("c", &amp;self.c));
-        s.serialize_struct_end()
-    }
-}
-</code></pre>
-
-<p>Much simpler than deserialization.</p>
-
-<h2>Performance</h2>
-
-<p>So how does it perform? Here&rsquo;s the serialization benchmarks, with yet another
-ordering. This time sorted by the performance:</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library         </th>
-<th> format                 </th>
-<th> serialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust  </td>
-<td> Cap&#8217;n Proto (unpacked) </td>
-<td> 4349                 </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto    </td>
-<td> Cap&#8217;n Proto            </td>
-<td> 3824.20              </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> bincode         </td>
-<td> Binary                 </td>
-<td> 1020                 </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> gogoprotobuf    </td>
-<td> Protocol Buffers       </td>
-<td> 596.78               </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust  </td>
-<td> Cap&#8217;n Proto (packed)   </td>
-<td> 583                  </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> rust-msgpack    </td>
-<td> MessagePack            </td>
-<td> 397                  </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> rust-protobuf   </td>
-<td> Protocol Buffers       </td>
-<td> 357                  </td>
-</tr>
-<tr>
-<td> C++      </td>
-<td> rapidjson       </td>
-<td> JSON                   </td>
-<td> 304                  </td>
-</tr>
-<tr>
-<td> <strong>Rust</strong> </td>
-<td> <strong>serde::json</strong> </td>
-<td> <strong>JSON</strong>               </td>
-<td> <strong>222</strong>              </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> goprotobuf      </td>
-<td> Protocol Buffers       </td>
-<td> 214.68               </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> ffjson          </td>
-<td> JSON                   </td>
-<td> 147.37               </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> serialize::json </td>
-<td> JSON                   </td>
-<td> 147                  </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> encoding/json   </td>
-<td> JSON                   </td>
-<td> 80.49                </td>
-</tr>
-</tbody>
-</table>
-
-
-<p><code>serde::json</code> is doing pretty good! It still has got a ways to go to catch up
-to <a href="https://github.com/miloyip/rapidjson">rapidjson</a>, but it&rsquo;s pretty cool it&rsquo;s
-beating <a href="https://github.com/golang/protobuf">goprotobuf</a> out of the box :)</p>
-
-<p>Here are the deserialization numbers:</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library         </th>
-<th> format                  </th>
-<th> deserialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust  </td>
-<td> Cap&#8217;n Proto (unpacked)  </td>
-<td> 2185                   </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto    </td>
-<td> Cap&#8217;n Proto (zero copy) </td>
-<td> 1407.95                </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto    </td>
-<td> Cap&#8217;n Proto             </td>
-<td> 711.77                 </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust  </td>
-<td> Cap&#8217;n Proto (packed)    </td>
-<td> 351                    </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> gogoprotobuf    </td>
-<td> Protocol Buffers        </td>
-<td> 272.68                 </td>
-</tr>
-<tr>
-<td> C++      </td>
-<td> rapidjson       </td>
-<td> JSON (sax)              </td>
-<td> 189                    </td>
-</tr>
-<tr>
-<td> C++      </td>
-<td> rapidjson       </td>
-<td> JSON (dom)              </td>
-<td> 162                    </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> rust-msgpack    </td>
-<td> MessagePack             </td>
-<td> 138                    </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> rust-protobuf   </td>
-<td> Protocol Buffers        </td>
-<td> 129                    </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> ffjson          </td>
-<td> JSON                    </td>
-<td> 95.06                  </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> bincode         </td>
-<td> Binary                  </td>
-<td> 80                     </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> goprotobuf      </td>
-<td> Protocol Buffers        </td>
-<td> 79.78                  </td>
-</tr>
-<tr>
-<td> <strong>Rust</strong> </td>
-<td> <strong>serde::json</strong> </td>
-<td> <strong>JSON</strong>                </td>
-<td> <strong>67</strong>                 </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> serialize::json </td>
-<td> JSON                    </td>
-<td> 24                     </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> encoding/json   </td>
-<td> JSON                    </td>
-<td> 22.79                  </td>
-</tr>
-</tbody>
-</table>
-
-
-<p>Well on the plus side, <code>serde::json</code> nearly 3 times faster than
-<code>libserialize::json</code>. On the downside rapidjson is nearly 3 times faster than
-us in it&rsquo;s SAX style parsing. Even the newly added deserialization support in
-<a href="https://github.com/pquerna/ffjson">ffjson</a> is 1.4 times faster than us. So we
-got more work cut out for us!</p>
-
-<p>Next time, serde2!</p>
-
-<p>PS: I&rsquo;m definitely getting close to the end of my story, and while I have some
-better numbers with serde2, nothing is quite putting me in the rapidjson
-range. Anyone want to help optimize
-<a href="https://github.com/erickt/rust-serde">serde</a>? I would greatly appreciate the help!</p>
-
-<p>PPS: I&rsquo;ve gotten a number of requests for my
-<a href="https://github.com/erickt/rust-serialization-benchmarks">serialization benchmarks</a>
-to be ported over to other languages and libraries. Especially a C++ version
-of Cap&#8217;n Proto. Unfortunately I don&rsquo;t really have the time to do it myself.
-Would anyone be up for helping to implement it?</p>
-
-<p>comments on <a href="https://www.reddit.com/r/rust/comments/2p85za/rewriting_rust_serialization_part_3_introducing/">reddit</a></p>
 ]]></content>
   </entry>
   
