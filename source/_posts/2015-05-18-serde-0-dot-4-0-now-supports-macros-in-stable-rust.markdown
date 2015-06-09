@@ -35,8 +35,8 @@ serde_macros = "*"
 And the actual library is `src/lib.rs`:
 
 ```rust
-#[feature(custom_derive, plugin)]
-#[plugin(serde_macros)]
+#![feature(custom_derive, plugin)]
+#![plugin(serde_macros)]
 
 extern crate serde;
 
@@ -182,8 +182,8 @@ pub fn main() {
 Finally, `src/lib.rs` is updated to:
 
 ```rust
-#[cfg_attr(feature = "nightly", feature(plugin))]
-#[cfg_attr(feature = "nightly", plugin(serde_macros))]
+#![cfg_attr(feature = "nightly", feature(plugin))]
+#![cfg_attr(feature = "nightly", plugin(serde_macros))]
 
 extern crate serde;
 
