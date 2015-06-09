@@ -145,8 +145,8 @@ nightly because it uses <code>serde_macros</code>. The <code>Cargo.toml</code> i
 <span class='line-number'>8</span>
 <span class='line-number'>9</span>
 <span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="cp">#[feature(custom_derive, plugin)]</span>
-</span><span class='line'><span class="cp">#[plugin(serde_macros)]</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="err">#</span><span class="o">!</span><span class="p">[</span><span class="n">feature</span><span class="p">(</span><span class="n">custom_derive</span><span class="p">,</span> <span class="n">plugin</span><span class="p">)]</span>
+</span><span class='line'><span class="err">#</span><span class="o">!</span><span class="p">[</span><span class="n">plugin</span><span class="p">(</span><span class="n">serde_macros</span><span class="p">)]</span>
 </span><span class='line'>
 </span><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">serde</span><span class="p">;</span>
 </span><span class='line'>
@@ -387,8 +387,8 @@ our example, we&rsquo;ll change the <code>Cargo.toml</code> to:</p>
 <span class='line-number'>8</span>
 <span class='line-number'>9</span>
 <span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="cp">#[cfg_attr(feature = </span><span class="s">&quot;nightly&quot;</span><span class="cp">, feature(plugin))]</span>
-</span><span class='line'><span class="cp">#[cfg_attr(feature = </span><span class="s">&quot;nightly&quot;</span><span class="cp">, plugin(serde_macros))]</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="err">#</span><span class="o">!</span><span class="p">[</span><span class="n">cfg_attr</span><span class="p">(</span><span class="n">feature</span> <span class="o">=</span> <span class="s">&quot;nightly&quot;</span><span class="p">,</span> <span class="n">feature</span><span class="p">(</span><span class="n">plugin</span><span class="p">))]</span>
+</span><span class='line'><span class="err">#</span><span class="o">!</span><span class="p">[</span><span class="n">cfg_attr</span><span class="p">(</span><span class="n">feature</span> <span class="o">=</span> <span class="s">&quot;nightly&quot;</span><span class="p">,</span> <span class="n">plugin</span><span class="p">(</span><span class="n">serde_macros</span><span class="p">))]</span>
 </span><span class='line'>
 </span><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">serde</span><span class="p">;</span>
 </span><span class='line'>
