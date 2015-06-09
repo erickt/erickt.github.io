@@ -134,7 +134,7 @@ build = "build.rs"
 [features]
 default = ["with_syntex"]
 nightly = ["serde_macros"]
-with_syntex = ["serde_codegen"]
+with_syntex = ["serde", "serde_codegen"]
 
 [build-dependencies]
 syntex = { version = "*", optional = true }
