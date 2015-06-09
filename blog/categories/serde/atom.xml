@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Serde | Chasing Rabbits]]></title>
   <link href="http://erickt.github.io/blog/categories/serde/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2015-06-09T13:47:43-07:00</updated>
+  <updated>2015-06-09T14:36:58-07:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -138,7 +138,7 @@ build = "build.rs"
 [features]
 default = ["with_syntex"]
 nightly = ["serde_macros"]
-with_syntex = ["serde_codegen"]
+with_syntex = ["serde", "serde_codegen"]
 
 [build-dependencies]
 syntex = { version = "*", optional = true }

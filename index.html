@@ -303,7 +303,7 @@ our example, we&rsquo;ll change the <code>Cargo.toml</code> to:</p>
 </span><span class='line'><span class="p">[</span><span class="n">features</span><span class="p">]</span>
 </span><span class='line'><span class="n">default</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;with_syntex&quot;</span><span class="p">]</span>
 </span><span class='line'><span class="n">nightly</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;serde_macros&quot;</span><span class="p">]</span>
-</span><span class='line'><span class="n">with_syntex</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;serde_codegen&quot;</span><span class="p">]</span>
+</span><span class='line'><span class="n">with_syntex</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;serde&quot;</span><span class="p">,</span> <span class="s">&quot;serde_codegen&quot;</span><span class="p">]</span>
 </span><span class='line'>
 </span><span class='line'><span class="p">[</span><span class="n">build-dependencies</span><span class="p">]</span>
 </span><span class='line'><span class="n">syntex</span> <span class="o">=</span> <span class="p">{</span> <span class="n">version</span> <span class="o">=</span> <span class="s">&quot;*&quot;</span><span class="p">,</span> <span class="n">optional</span> <span class="o">=</span> <span class="n">true</span> <span class="p">}</span>
