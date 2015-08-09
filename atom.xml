@@ -4,7 +4,7 @@
   <title><![CDATA[Chasing Rabbits]]></title>
   <link href="http://erickt.github.io/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2015-06-09T14:36:58-07:00</updated>
+  <updated>2015-08-08T17:07:43-07:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -12,6 +12,305 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Serde 0.5.0 - Many Many Changes]]></title>
+    <link href="http://erickt.github.io/blog/2015/08/07/serde-0-dot-5-0-many-many-changes/"/>
+    <updated>2015-08-07T08:14:22-07:00</updated>
+    <id>http://erickt.github.io/blog/2015/08/07/serde-0-dot-5-0-many-many-changes</id>
+    <content type="html"><![CDATA[<p>Hello all you beautiful and talented people! I&rsquo;m pleased to announce
+<a href="https://github.com/serde-rs/serde">serde</a> 0.5.0. We&rsquo;re bumping the major
+(unstable) version number here because there have been a huge amount of
+breaking changes in the API. This has been done to better support serialization
+formats like <a href="https://github.com/TyOverby/bincode">bincode</a>, which relies on
+the <code>Serialize</code>e to hint to the <code>Serializer</code> how to parse the next bytes.
+This will enable <a href="https://github.com/servo/servo/pull/6583">Servo</a> to use
+bincode for it&rsquo;s IPC protocol.</p>
+
+<p>Here are the major changes:</p>
+
+<ul>
+<li><code>serde::json</code> was factored out into it&rsquo;s own separate crate
+<a href="https://crates.io/crates/serde_json">serde_json</a>
+  <a href="https://github.com/serde-rs/serde/pull/114">#114</a>.</li>
+<li>Added serialization and deserialization type hints.</li>
+<li>Renamed many functions to change <code>visit_named_{map,seq}</code> to
+  <code>visit_struct</code> and <code>visit_tuple_struct</code>
+  <a href="https://github.com/serde-rs/serde/pull/114">#114</a>
+<a href="https://github.com/serde-rs/serde/pull/120">#120</a>.</li>
+<li>Added hooks to allow serializers to serialize newtype tuple structs without a
+wrapper type <a href="https://github.com/serde-rs/serde/pull/121">#121</a>.</li>
+<li>Remove <code>_error</code> from <code>de::Error</code>
+<a href="https://github.com/serde-rs/serde/pull/129">#129</a>.</li>
+<li>Rewrote json parser to not consume the whole stream
+<a href="https://github.com/serde-rs/serde/pull/127">#127</a>.</li>
+<li>Fixed <code>serde_macros</code> for generating fully generic code
+<a href="https://github.com/serde-rs/serde/pull/117">#117</a>.</li>
+</ul>
+
+
+<p>Thank you to everyone that&rsquo;s helped with this release:</p>
+
+<ul>
+<li>Craig Brandenburg</li>
+<li>Hugo Duncan</li>
+<li>Jarred Nicholis</li>
+<li>Oliver Schneider</li>
+<li>Patrick Walton</li>
+<li>Sebastian Thiel</li>
+<li>Skylar Lipthay</li>
+<li>Thomas Bahn</li>
+<li>dswd</li>
+</ul>
+
+
+<h1>Benchmarks</h1>
+
+<p>It&rsquo;s been a bit since we last did some
+<a href="https://erickt.github.io/blog/2015/02/16/rewriting-rust-serialization-there-can-be-only-one-serde/">benchmarks</a>,
+so here are the latest numbers with these compilers:</p>
+
+<ul>
+<li>rustc: 1.4.0-nightly (1181679c8 2015-08-07)</li>
+<li>go: version go1.4.2 darwin/amd64</li>
+<li>clang: Apple LLVM version 6.1.0 (clang-602.0.53) (based on LLVM 3.6.0svn)</li>
+</ul>
+
+
+<p><a href="https://github.com/TyOverby/bincode">bincode</a>&rsquo;s serde support makes it&rsquo;s first
+appearance, which starts out roughly 1/3 slower at serialization, but about the
+same speed at deserialization. I haven&rsquo;t done much optimization, so there&rsquo;s
+probably a lot of low hanging fruit.</p>
+
+<p><a href="https://crates.io/crates/serde_json">serde_json</a> saw a good amount of
+improvement, mainly from some compiler optimizations in the 1.4 nightly. The
+deserializer is slightly slower due to the parser rewrite.</p>
+
+<p><a href="https://github.com/dwrensha/capnproto-rust">capnproto-rust</a>&rsquo;s unpacked format
+shows a surprisingly large large serialization improvement, with a 10x
+improvement from 4GB/s to 15GB/s. Good job dwrensha!  Deserialization is half
+as slow as before though. Perhaps I have a bug in my code?</p>
+
+<p>I&rsquo;ve changed the Rust MessagePack implementation to
+<a href="https://github.com/3Hren/msgpack-rust">rmp</a>, which has a wee bit faster
+serializer, but deserialization was about the same.</p>
+
+<p>I&rsquo;ve also updated the numbers for Go and C++, but those numbers stayed roughly
+the same.</p>
+
+<p>Serialization:</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library             </th>
+<th> format                     </th>
+<th> serialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>capnproto-rust</strong>  </td>
+<td> <strong>Cap&#8217;n Proto (unpacked)</strong> </td>
+<td> <del>4349</del> <strong>15448</strong>   </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> go-capnproto        </td>
+<td> Cap&#8217;n Proto                </td>
+<td> 3877                 </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>bincode</strong>         </td>
+<td> <strong>Raw</strong>                    </td>
+<td> <del>1020</del> <strong>3278</strong>    </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>bincode (serde)</strong> </td>
+<td> <strong>Raw</strong>                    </td>
+<td> <strong>2143</strong>             </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>capnproto-rust</strong>  </td>
+<td> <strong>Cap&#8217;n Proto (packed)</strong>   </td>
+<td> <del>583</del> <strong>656</strong>      </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> gogoprotobuf        </td>
+<td> Protocol Buffers           </td>
+<td> <del>596</del> 627          </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>rmp</strong>             </td>
+<td> <strong>MessagePack</strong>            </td>
+<td> <del>397</del> <strong>427</strong>      </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>rust-protobuf</strong>   </td>
+<td> <strong>Protocol Buffers</strong>       </td>
+<td> <del>357</del> <strong>373</strong>      </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>serde::json</strong>     </td>
+<td> <strong>JSON</strong>                   </td>
+<td> <del>288</del> <strong>337</strong>      </td>
+</tr>
+<tr>
+<td> C++      </td>
+<td> rapidjson           </td>
+<td> JSON                       </td>
+<td> 307                  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> goprotobuf          </td>
+<td> Protocol Buffers           </td>
+<td> <del>214</del> 226          </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>serialize::json</strong> </td>
+<td> <strong>JSON</strong>                   </td>
+<td> <del>147</del> <strong>212</strong>      </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> ffjson              </td>
+<td> JSON                       </td>
+<td> 147                  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> encoding/json       </td>
+<td> JSON                       </td>
+<td> 85                   </td>
+</tr>
+</tbody>
+</table>
+
+
+<p>Deserialization:</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library             </th>
+<th> format                     </th>
+<th> deserialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>capnproto-rust</strong>  </td>
+<td> <strong>Cap&#8217;n Proto (unpacked)</strong> </td>
+<td> <del>2185</del> <strong>1306</strong>      </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> go-capnproto        </td>
+<td> Cap&#8217;n Proto (zero copy)    </td>
+<td> 1407                   </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> go-capnproto        </td>
+<td> Cap&#8217;n Proto                </td>
+<td> 711                    </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>capnproto-rust</strong>  </td>
+<td> <strong>Cap&#8217;n Proto (packed)</strong>   </td>
+<td> <del>351</del> <strong>464</strong>        </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>bincode (serde)</strong> </td>
+<td> <strong>Raw</strong>                    </td>
+<td> <strong>310</strong>                </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>bincode</strong>         </td>
+<td> <strong>Raw</strong>                    </td>
+<td> <del>142</del> <strong>291</strong>        </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> gogoprotobuf        </td>
+<td> Protocol Buffers           </td>
+<td> 270                    </td>
+</tr>
+<tr>
+<td> C++      </td>
+<td> rapidjson           </td>
+<td> JSON (sax)                 </td>
+<td> 182                    </td>
+</tr>
+<tr>
+<td> C++      </td>
+<td> rapidjson           </td>
+<td> JSON (dom)                 </td>
+<td> 155                    </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>rust-protobuf</strong>   </td>
+<td> <strong>Protocol Buffers</strong>       </td>
+<td> <strong>143</strong>                </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>rmp</strong>             </td>
+<td> <strong>MessagePack</strong>            </td>
+<td> <del>138</del> <strong>128</strong>        </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>serde::json</strong>     </td>
+<td> <strong>JSON</strong>                   </td>
+<td> <del>140</del> <strong>122</strong>        </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> ffjson              </td>
+<td> JSON                       </td>
+<td> 95                     </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> goprotobuf          </td>
+<td> Protocol Buffers           </td>
+<td> 81                     </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> encoding/json       </td>
+<td> JSON                       </td>
+<td> 23                     </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> serialize::json     </td>
+<td> JSON                       </td>
+<td> 23                     </td>
+</tr>
+</tbody>
+</table>
+
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Serde 0.4.0 - Syntax Extensions in Stable Rust and More!]]></title>

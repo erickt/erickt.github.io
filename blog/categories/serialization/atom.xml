@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Serialization | Chasing Rabbits]]></title>
   <link href="http://erickt.github.io/blog/categories/serialization/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2015-06-09T14:36:58-07:00</updated>
+  <updated>2015-08-08T17:07:43-07:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -12,6 +12,305 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Serde 0.5.0 - Many Many Changes]]></title>
+    <link href="http://erickt.github.io/blog/2015/08/07/serde-0-dot-5-0-many-many-changes/"/>
+    <updated>2015-08-07T08:14:22-07:00</updated>
+    <id>http://erickt.github.io/blog/2015/08/07/serde-0-dot-5-0-many-many-changes</id>
+    <content type="html"><![CDATA[<p>Hello all you beautiful and talented people! I&rsquo;m pleased to announce
+<a href="https://github.com/serde-rs/serde">serde</a> 0.5.0. We&rsquo;re bumping the major
+(unstable) version number here because there have been a huge amount of
+breaking changes in the API. This has been done to better support serialization
+formats like <a href="https://github.com/TyOverby/bincode">bincode</a>, which relies on
+the <code>Serialize</code>e to hint to the <code>Serializer</code> how to parse the next bytes.
+This will enable <a href="https://github.com/servo/servo/pull/6583">Servo</a> to use
+bincode for it&rsquo;s IPC protocol.</p>
+
+<p>Here are the major changes:</p>
+
+<ul>
+<li><code>serde::json</code> was factored out into it&rsquo;s own separate crate
+<a href="https://crates.io/crates/serde_json">serde_json</a>
+  <a href="https://github.com/serde-rs/serde/pull/114">#114</a>.</li>
+<li>Added serialization and deserialization type hints.</li>
+<li>Renamed many functions to change <code>visit_named_{map,seq}</code> to
+  <code>visit_struct</code> and <code>visit_tuple_struct</code>
+  <a href="https://github.com/serde-rs/serde/pull/114">#114</a>
+<a href="https://github.com/serde-rs/serde/pull/120">#120</a>.</li>
+<li>Added hooks to allow serializers to serialize newtype tuple structs without a
+wrapper type <a href="https://github.com/serde-rs/serde/pull/121">#121</a>.</li>
+<li>Remove <code>_error</code> from <code>de::Error</code>
+<a href="https://github.com/serde-rs/serde/pull/129">#129</a>.</li>
+<li>Rewrote json parser to not consume the whole stream
+<a href="https://github.com/serde-rs/serde/pull/127">#127</a>.</li>
+<li>Fixed <code>serde_macros</code> for generating fully generic code
+<a href="https://github.com/serde-rs/serde/pull/117">#117</a>.</li>
+</ul>
+
+
+<p>Thank you to everyone that&rsquo;s helped with this release:</p>
+
+<ul>
+<li>Craig Brandenburg</li>
+<li>Hugo Duncan</li>
+<li>Jarred Nicholis</li>
+<li>Oliver Schneider</li>
+<li>Patrick Walton</li>
+<li>Sebastian Thiel</li>
+<li>Skylar Lipthay</li>
+<li>Thomas Bahn</li>
+<li>dswd</li>
+</ul>
+
+
+<h1>Benchmarks</h1>
+
+<p>It&rsquo;s been a bit since we last did some
+<a href="https://erickt.github.io/blog/2015/02/16/rewriting-rust-serialization-there-can-be-only-one-serde/">benchmarks</a>,
+so here are the latest numbers with these compilers:</p>
+
+<ul>
+<li>rustc: 1.4.0-nightly (1181679c8 2015-08-07)</li>
+<li>go: version go1.4.2 darwin/amd64</li>
+<li>clang: Apple LLVM version 6.1.0 (clang-602.0.53) (based on LLVM 3.6.0svn)</li>
+</ul>
+
+
+<p><a href="https://github.com/TyOverby/bincode">bincode</a>&rsquo;s serde support makes it&rsquo;s first
+appearance, which starts out roughly 1/3 slower at serialization, but about the
+same speed at deserialization. I haven&rsquo;t done much optimization, so there&rsquo;s
+probably a lot of low hanging fruit.</p>
+
+<p><a href="https://crates.io/crates/serde_json">serde_json</a> saw a good amount of
+improvement, mainly from some compiler optimizations in the 1.4 nightly. The
+deserializer is slightly slower due to the parser rewrite.</p>
+
+<p><a href="https://github.com/dwrensha/capnproto-rust">capnproto-rust</a>&rsquo;s unpacked format
+shows a surprisingly large large serialization improvement, with a 10x
+improvement from 4GB/s to 15GB/s. Good job dwrensha!  Deserialization is half
+as slow as before though. Perhaps I have a bug in my code?</p>
+
+<p>I&rsquo;ve changed the Rust MessagePack implementation to
+<a href="https://github.com/3Hren/msgpack-rust">rmp</a>, which has a wee bit faster
+serializer, but deserialization was about the same.</p>
+
+<p>I&rsquo;ve also updated the numbers for Go and C++, but those numbers stayed roughly
+the same.</p>
+
+<p>Serialization:</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library             </th>
+<th> format                     </th>
+<th> serialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>capnproto-rust</strong>  </td>
+<td> <strong>Cap&#8217;n Proto (unpacked)</strong> </td>
+<td> <del>4349</del> <strong>15448</strong>   </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> go-capnproto        </td>
+<td> Cap&#8217;n Proto                </td>
+<td> 3877                 </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>bincode</strong>         </td>
+<td> <strong>Raw</strong>                    </td>
+<td> <del>1020</del> <strong>3278</strong>    </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>bincode (serde)</strong> </td>
+<td> <strong>Raw</strong>                    </td>
+<td> <strong>2143</strong>             </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>capnproto-rust</strong>  </td>
+<td> <strong>Cap&#8217;n Proto (packed)</strong>   </td>
+<td> <del>583</del> <strong>656</strong>      </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> gogoprotobuf        </td>
+<td> Protocol Buffers           </td>
+<td> <del>596</del> 627          </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>rmp</strong>             </td>
+<td> <strong>MessagePack</strong>            </td>
+<td> <del>397</del> <strong>427</strong>      </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>rust-protobuf</strong>   </td>
+<td> <strong>Protocol Buffers</strong>       </td>
+<td> <del>357</del> <strong>373</strong>      </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>serde::json</strong>     </td>
+<td> <strong>JSON</strong>                   </td>
+<td> <del>288</del> <strong>337</strong>      </td>
+</tr>
+<tr>
+<td> C++      </td>
+<td> rapidjson           </td>
+<td> JSON                       </td>
+<td> 307                  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> goprotobuf          </td>
+<td> Protocol Buffers           </td>
+<td> <del>214</del> 226          </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>serialize::json</strong> </td>
+<td> <strong>JSON</strong>                   </td>
+<td> <del>147</del> <strong>212</strong>      </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> ffjson              </td>
+<td> JSON                       </td>
+<td> 147                  </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> encoding/json       </td>
+<td> JSON                       </td>
+<td> 85                   </td>
+</tr>
+</tbody>
+</table>
+
+
+<p>Deserialization:</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library             </th>
+<th> format                     </th>
+<th> deserialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>capnproto-rust</strong>  </td>
+<td> <strong>Cap&#8217;n Proto (unpacked)</strong> </td>
+<td> <del>2185</del> <strong>1306</strong>      </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> go-capnproto        </td>
+<td> Cap&#8217;n Proto (zero copy)    </td>
+<td> 1407                   </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> go-capnproto        </td>
+<td> Cap&#8217;n Proto                </td>
+<td> 711                    </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>capnproto-rust</strong>  </td>
+<td> <strong>Cap&#8217;n Proto (packed)</strong>   </td>
+<td> <del>351</del> <strong>464</strong>        </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>bincode (serde)</strong> </td>
+<td> <strong>Raw</strong>                    </td>
+<td> <strong>310</strong>                </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>bincode</strong>         </td>
+<td> <strong>Raw</strong>                    </td>
+<td> <del>142</del> <strong>291</strong>        </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> gogoprotobuf        </td>
+<td> Protocol Buffers           </td>
+<td> 270                    </td>
+</tr>
+<tr>
+<td> C++      </td>
+<td> rapidjson           </td>
+<td> JSON (sax)                 </td>
+<td> 182                    </td>
+</tr>
+<tr>
+<td> C++      </td>
+<td> rapidjson           </td>
+<td> JSON (dom)                 </td>
+<td> 155                    </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>rust-protobuf</strong>   </td>
+<td> <strong>Protocol Buffers</strong>       </td>
+<td> <strong>143</strong>                </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>rmp</strong>             </td>
+<td> <strong>MessagePack</strong>            </td>
+<td> <del>138</del> <strong>128</strong>        </td>
+</tr>
+<tr>
+<td> <strong>Rust</strong> </td>
+<td> <strong>serde::json</strong>     </td>
+<td> <strong>JSON</strong>                   </td>
+<td> <del>140</del> <strong>122</strong>        </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> ffjson              </td>
+<td> JSON                       </td>
+<td> 95                     </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> goprotobuf          </td>
+<td> Protocol Buffers           </td>
+<td> 81                     </td>
+</tr>
+<tr>
+<td> Go       </td>
+<td> encoding/json       </td>
+<td> JSON                       </td>
+<td> 23                     </td>
+</tr>
+<tr>
+<td> Rust     </td>
+<td> serialize::json     </td>
+<td> JSON                       </td>
+<td> 23                     </td>
+</tr>
+</tbody>
+</table>
+
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Serde 0.4.0 - Syntax Extensions in Stable Rust and More!]]></title>
@@ -1238,288 +1537,6 @@ a few things left to port over from serde1 to serde2 (like the JSON pretty
 printer), and some things probably should be renamed, I&rsquo;m happy with the design
 so I think it&rsquo;s in a place where people can start using it now. Please let me
 know how it goes!</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Rewriting Rust Serialization, Part 3.1: Another Performance Digression]]></title>
-    <link href="http://erickt.github.io/blog/2014/12/13/performance-digression/"/>
-    <updated>2014-12-13T18:35:08-08:00</updated>
-    <id>http://erickt.github.io/blog/2014/12/13/performance-digression</id>
-    <content type="html"><![CDATA[<p>Wow, home stretch! Here&rsquo;s the rest of the series if you want to catch up:
-<a href="http://erickt.github.io/blog/2014/10/28/serialization/">part 1</a>,
-<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2</a>,
-<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2.1</a>,
-<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2.2</a>, and
-<a href="http://erickt.github.io/blog/2014/12/13/rewriting-rust-serialization/">part 3</a>.</p>
-
-<p>Overall <code>serde</code>&rsquo;s approach for serialization works out pretty well. One thing I
-forgot to include in the last post was that I also have two benchmarks that are
-not using <code>serde</code>, but are just safely reading and writing values.  Assuming I
-haven&rsquo;t missed anything, they should be the upper limit in performance we can
-get out of any serialization framework: Here&rsquo;s
-<a href="https://github.com/erickt/rust-serde/blob/master/benches/bench_log.rs#L1021">serialization</a>:</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library                        </th>
-<th> serialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> <strong>rust</strong> </td>
-<td> <strong>max without string escapes</strong> </td>
-<td> <strong>353</strong>              </td>
-</tr>
-<tr>
-<td> c++      </td>
-<td> rapidjson                      </td>
-<td> 304                  </td>
-</tr>
-<tr>
-<td> <strong>rust</strong> </td>
-<td> <strong>max with string escape</strong>     </td>
-<td> <strong>234</strong>              </td>
-</tr>
-<tr>
-<td> rust     </td>
-<td> serde::json                    </td>
-<td> 201                  </td>
-</tr>
-<tr>
-<td> rust     </td>
-<td> serialize::json                </td>
-<td> 147                  </td>
-</tr>
-<tr>
-<td> go       </td>
-<td> ffjson                         </td>
-<td> 147                  </td>
-</tr>
-</tbody>
-</table>
-
-
-<p>So beyond optimizing string escaping, <code>serde::json</code> is only 14% slower than the
-zero-cost version and 34% slower than <code>rapidjson</code>.</p>
-
-<p><a href="https://github.com/erickt/rust-serde/blob/master/benches/bench_log.rs#L1613">Deserialization</a>,
-on the other hand, still has a ways to go:</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library                         </th>
-<th> deserialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> rust     </td>
-<td> rapidjson (SAX)                 </td>
-<td> 189                    </td>
-</tr>
-<tr>
-<td> c++      </td>
-<td> rapidjson (DOM)                 </td>
-<td> 162                    </td>
-</tr>
-<tr>
-<td> <strong>rust</strong> </td>
-<td> <strong>max with Iterator&lt;u8&gt;</strong> </td>
-<td> <strong>152</strong>                </td>
-</tr>
-<tr>
-<td> go       </td>
-<td> ffjson                          </td>
-<td> 95                     </td>
-</tr>
-<tr>
-<td> <strong>rust</strong> </td>
-<td> <strong>max with Reader</strong>             </td>
-<td> <strong>78</strong>                 </td>
-</tr>
-<tr>
-<td> rust     </td>
-<td> serde::json                     </td>
-<td> 73                     </td>
-</tr>
-<tr>
-<td> rust     </td>
-<td> serialize::json                 </td>
-<td> 24                     </td>
-</tr>
-</tbody>
-</table>
-
-
-<p>There are a couple interesting things here:</p>
-
-<p>First, <code>serde::json</code> is built upon consuming from an <code>Iterator&lt;u8&gt;</code>, so we&rsquo;re
-48% slower than our theoretical max, and 58% slower than <code>rapidjson</code>. It looks
-like tagged tokens, while faster than the closures in <code>libserialize</code>, are still
-pretty expensive.</p>
-
-<p>Second, <code>ffjson</code> is beating us and they compile dramatically faster too. The
-<a href="https://github.com/cloudflare/goser">goser</a> test suite takes about 0.54
-seconds to compile, whereas mine takes about 30 seconds at <code>--opt-level=3</code>
-(!!). Rust itself is only taking 1.5 seconds, the rest is spent in LLVM. With
-no optimization, it compiles &ldquo;only&rdquo; in 5.6 seconds, and is 96% slower.</p>
-
-<p>Third, <code>Reader</code> is a surprisingly expensive trait when dealing with a format
-like JSON that need to read a byte at a time. It turns out we&rsquo;re not
-<a href="https://github.com/rust-lang/rust/issues/19864">generating great code</a> for
-types with padding. aatch has been working on fixing this though.</p>
-
-<hr />
-
-<p>Since I wrote that last section, I did a little more experimentation to try to
-figure out why our serialization upper bound is 23% slower than rapidjson. And,
-well, maybe I found it?</p>
-
-<table>
-<thead>
-<tr>
-<th>                                </th>
-<th> serialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> serde::json with a MyMemWriter </td>
-<td> 346                  </td>
-</tr>
-<tr>
-<td> serde::json with a Vec<u8>     </td>
-<td> 247                  </td>
-</tr>
-</tbody>
-</table>
-
-
-<p>All I did with <code>MyMemWriter</code> is copy the <code>Vec::&lt;u8&gt;</code> implementation of <code>Writer</code>
-into the local codebase:</p>
-
-<pre><code class="rust">struct MyMemWriter0 {
-    buf: Vec&lt;u8&gt;,
-}
-
-impl MyMemWriter0 {
-    pub fn with_capacity(cap: uint) -&gt; MyMemWriter0 {
-        MyMemWriter0 {
-            buf: Vec::with_capacity(cap)
-        }
-    }
-}
-
-impl Writer for MyMemWriter0 {
-    #[inline]
-    fn write(&amp;mut self, buf: &amp;[u8]) -&gt; io::IoResult&lt;()&gt; {
-        self.buf.push_all(buf);
-        Ok(())
-    }
-}
-
-#[bench]
-fn bench_serializer_my_mem_writer0(b: &amp;mut Bencher) {
-    let log = Log::new();
-    let json = json::to_vec(&amp;log);
-    b.bytes = json.len() as u64;
-
-    let mut wr = MyMemWriter0::with_capacity(1024);
-
-    b.iter(|| {
-        wr.buf.clear();
-
-        let mut serializer = json::Serializer::new(wr.by_ref());
-        log.serialize(&amp;mut serializer).unwrap();
-        let _json = serializer.unwrap();
-    });
-}
-
-#[bench]
-fn bench_serializer_vec(b: &amp;mut Bencher) {
-    let log = Log::new();
-    let json = json::to_vec(&amp;log);
-    b.bytes = json.len() as u64;
-
-    let mut wr = Vec::with_capacity(1024);
-
-    b.iter(|| {
-        wr.clear();
-
-        let mut serializer = json::Serializer::new(wr.by_ref());
-        log.serialize(&amp;mut serializer).unwrap();
-        let _json = serializer.unwrap();
-    });
-}
-</code></pre>
-
-<p>Somehow it&rsquo;s not enough to just mark <code>Vec::write</code> as
-<code>#[inline]</code>, having it in the same file gave LLVM enough information to
-optimize it&rsquo;s overhead away. Even using <code>#[inline(always)]</code> on <code>Vec::write</code> and
-<code>Vec::push_all</code> isn&rsquo;t able to get the same increase, so I&rsquo;m not sure how to
-replicate this in the general case.</p>
-
-<p>Also interesting is <code>bench_serializer_slice</code>, which uses <code>BufWriter</code>.</p>
-
-<table>
-<thead>
-<tr>
-<th>                                </th>
-<th> serialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> serde::json with a BufWriter   </td>
-<td> 342                  </td>
-</tr>
-</tbody>
-</table>
-
-
-<pre><code class="rust">#[bench]
-fn bench_serializer_slice(b: &amp;mut Bencher) {
-    let log = Log::new();
-    let json = json::to_vec(&amp;log);
-    b.bytes = json.len() as u64;
-
-    let mut buf = [0, .. 1024];
-
-    b.iter(|| {
-        for item in buf.iter_mut(){ *item = 0; }
-        let mut wr = std::io::BufWriter::new(&amp;mut buf);
-
-        let mut serializer = json::Serializer::new(wr.by_ref());
-        log.serialize(&amp;mut serializer).unwrap();
-        let _json = serializer.unwrap();
-    });
-}
-</code></pre>
-
-<hr />
-
-<p>Another digression. Since I wrote the above, aatch has put out some PRs that
-should help speed up enums.
-<a href="https://github.com/rust-lang/rust/pull/19898">19898</a> and
-<a href="https://github.com/rust-lang/rust/pull/20060">#20060</a> and was able to optimize
-the padding out of enums and fix an issue with returns generating bad code. In
-my <a href="https://github.com/rust-lang/rust/issues/19864">bug from earlier</a>
-his patches were able to speed up my benchmark returning an
-<code>Result&lt;(), IoError&gt;</code> from running at 40MB/s to 88MB/s. However, if we&rsquo;re able
-to reduce <code>IoError</code> down to a word, we get the performance up to 730MB/s! We
-also might get enum compression, so a type like <code>Result&lt;(), IoError&gt;</code> then
-would speed up to 1200MB/s! I think going in this direction is going to really
-help speed things up.</p>
-
-<hr />
-
-<p>That was taking a while, so until next time!</p>
 ]]></content>
   </entry>
   

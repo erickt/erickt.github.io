@@ -9,9 +9,9 @@
   <meta name="author" content="Erick Tryzelaar">
 
   
-  <meta name="description" content="Back to the benchmarks! I got some great comments on
-reddit,
-So I wanted to do another post to update my numbers. Here&rsquo;s what I changed: I wasn &hellip;">
+  <meta name="description" content="A slight diversion from my serialization series. Last week, strcat submitted
+#18885 pull request, which adds
+support for using a Vec as a Writer. &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -79,6 +79,1190 @@ So I wanted to do another post to update my numbers. Here&rsquo;s what I changed
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/11/19/adventures-in-debugging-a-potential-osx-kernel-bug/">Chasing an EPROTOTYPE Through Rust, Sendto, and the OSX Kernel With C-Reduce</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-11-19T07:35:04-08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>19</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>7:35 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>A slight diversion from my serialization series. Last week, strcat submitted
+<a href="https://github.com/rust-lang/rust/pull/18885">#18885</a> pull request, which adds
+support for using a <code>Vec</code> as a <code>Writer</code>. Over the weekend I submitted
+<a href="https://github.com/rust-lang/rust/pull/18980">#18980</a>, which allows a <code>&amp;[u8]</code>
+to be used as a <code>Reader</code>. Overall a pretty simple change. However, when I was
+running the test suite, I found that the <code>std::io::net::tcp::write_close_ip4()</code>
+test was occasionally failing:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="cp">#[test]</span>
+</span><span class='line'><span class="k">fn</span> <span class="n">write_close_ip4</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">addr</span> <span class="o">=</span> <span class="n">next_test_ip4</span><span class="p">();</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="k">mut</span> <span class="n">acceptor</span> <span class="o">=</span> <span class="n">TcpListener</span><span class="o">::</span><span class="n">bind</span><span class="p">(</span><span class="n">addr</span><span class="p">).</span><span class="n">listen</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="nb">spawn</span><span class="p">(</span><span class="k">proc</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">_stream</span> <span class="o">=</span> <span class="n">TcpStream</span><span class="o">::</span><span class="n">connect</span><span class="p">(</span><span class="n">addr</span><span class="p">);</span>
+</span><span class='line'>        <span class="c1">// Close</span>
+</span><span class='line'>    <span class="p">});</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">let</span> <span class="k">mut</span> <span class="n">stream</span> <span class="o">=</span> <span class="n">acceptor</span><span class="p">.</span><span class="n">accept</span><span class="p">();</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">buf</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+</span><span class='line'>    <span class="k">loop</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">match</span> <span class="n">stream</span><span class="p">.</span><span class="n">write</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nb">Ok</span><span class="p">(..)</span> <span class="o">=&gt;</span> <span class="p">{}</span>
+</span><span class='line'>            <span class="nb">Err</span><span class="p">(</span><span class="n">e</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">assert</span><span class="o">!</span><span class="p">(</span><span class="n">e</span><span class="p">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">ConnectionReset</span> <span class="o">||</span>
+</span><span class='line'>                        <span class="n">e</span><span class="p">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">BrokenPipe</span> <span class="o">||</span>
+</span><span class='line'>                        <span class="n">e</span><span class="p">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">ConnectionAborted</span><span class="p">,</span>
+</span><span class='line'>                        <span class="s">&quot;unknown error: {}&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">break</span><span class="p">;</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>write</code> would succeed a few times, then occasionally error with the
+<code>unknown error: Protocol wrong type for socket</code>, or the <code>EPROTOTYPE</code> errno.
+This is a really surprising error. As far as I know, the only functions that
+return that errno are <code>socket</code>, <code>socketpair</code>, and <code>connect</code>. I searched
+everywhere, but I couldn&rsquo;t find any documentation suggesting that <code>write</code> would
+ever produce that error.</p>
+
+<p>I wasn&rsquo;t the only one who ran into it. bjz opened
+<a href="https://github.com/rust-lang/rust/issues/18900">#18900</a> describing the same
+problem. One interesting thing to note is they were also on OSX Yosemite.  So I
+took a little bit of time to extract out that test from the Rust test suite
+into this <a href="https://gist.github.com/erickt/ac1f35e20834aa5d1972">gist</a> and got
+someone on #rust-internals to run it on linux for me with this little driver
+script:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class='sh'><span class='line'><span class="c">#!/bin/sh</span>
+</span><span class='line'>
+</span><span class='line'><span class="nb">set</span> -e
+</span><span class='line'>
+</span><span class='line'>rustc test.rs
+</span><span class='line'>
+</span><span class='line'><span class="k">for</span> i in <span class="k">$(</span>seq <span class="m">1</span> 1000<span class="k">)</span><span class="p">;</span> <span class="k">do</span>
+</span><span class='line'>  ./test tcp::test::write_close_ip4
+</span><span class='line'><span class="k">done</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>and it didn&rsquo;t error out. So it seems to be system dependent. Further
+experimentation showed that if we introduced sleeps or a mutex synchronization
+appeared to fix the problem as well. At this point I wasn&rsquo;t sure if this was a
+non-issue, a bug in our code, or a bug in the OS. One things for sure though,
+if there is a bug, it could be scattered somewhere across the Rust codebase,
+which just <code>std::io</code> alone is 20 files at around 12522 lines. It&rsquo;d be a pain to
+cut that down to a self contained test case.</p>
+
+<p>Fortunately we&rsquo;ve got <a href="http://embed.cs.utah.edu/creduce/">C-Reduce</a> to help us
+out. Back in May <a href="http://www.cs.utah.edu/~regehr/">Professor John Regehr</a> from
+the University of Utah came to our
+<a href="http://www.meetup.com/Rust-Bay-Area/events/169434302/">Bay Area Rust meetup</a>
+ to talk about compiler testing and fuzzing. We recorded the talk, so if you
+want to watch it, you can find it
+<a href="https://air.mozilla.org/rust-meetup-may-2014/">here</a>. One of the things he
+talked about was the tool C-Reduce his research group developed to
+automatically cut
+out unnecessary lines of code that can still reproduce a bug you&rsquo;re looking
+for. While it&rsquo;s written to target C files, it turns out Rust is syntatically
+close enough to C that it works out pretty well for it too. All you need is a
+single source file and driver script that&rsquo;ll report if the compiled source file
+reproduced the bug.</p>
+
+<p>Aside 1: By the way, one of the other things I did this weekend was I put
+together a Homebrew
+<a href="https://github.com/Homebrew/homebrew/pull/34220">pull request for C-Reduce</a>.
+It hasn&rsquo;t landed yet, but you want to use it, you can do:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class='sh'><span class='line'>% brew install https://raw.githubusercontent.com/erickt/homebrew/delta-and-creduce/Library/Formula/delta.rb
+</span><span class='line'>% brew install https://raw.githubusercontent.com/erickt/homebrew/delta-and-creduce/Library/Formula/creduce.rb
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Hopefully it&rsquo;ll land soon so you&rsquo;ll be able to do:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='sh'><span class='line'>% brew install creduce
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Anyway, back to the story. So we&rsquo;ve got a rather large code base to cover, and
+while C-reduce does a pretty good job of trimming away lines, just pointing it
+at the entire <code>std</code> module is a bit too much for it to handle in a reasonable
+amount of time. It probably needs some more semantic information about Rust to
+do a better job of cutting out broad swaths of code.</p>
+
+<p>So I needed to do at least a rough pass to slim down the files. I figured the
+problem was probably contained in <code>std::io</code> or <code>std::sys</code>, so I wrote a simple
+<code>test.rs</code> that explicitly included those modules as part of the crate (see
+this <a href="https://gist.github.com/erickt/ac1f35e20834aa5d1972">gist</a> if you are
+interested), and used the pretty printer to merge it into one file:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='sh'><span class='line'>% rustc --pretty normal test.rs &gt; test.rs
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Aside 2: Our pretty printer still has some bugs in it, which I filed:
+<a href="https://github.com/rust-lang/rust/issues/19075">19075</a> and
+<a href="https://github.com/rust-lang/rust/issues/19077">19077</a>.  Fortunately it was
+pretty simple to fix those cases by hand in the generated <code>std.rs</code>, and odds
+are good they&rsquo;ll be fixed by the time you might use this process.</p>
+
+<p>Next up, we need a driver script. We can adapt our one from before. The only
+special consideration is that we need to make sure to only exit with a return
+code of 0 if the version of <code>std.rs</code> we&rsquo;re compiling errors with <code>EPROTOTYPE</code>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+</pre></td><td class='code'><pre><code class='bash'><span class='line'><span class="c">#!/bin/sh</span>
+</span><span class='line'>
+</span><span class='line'>rustc <span class="se">\</span>
+</span><span class='line'>  -A unused_imports <span class="se">\</span>
+</span><span class='line'>  -A unused_unsafe <span class="se">\</span>
+</span><span class='line'>  -A non_camel_case_types <span class="se">\</span>
+</span><span class='line'>  -A unused_variables <span class="se">\</span>
+</span><span class='line'>  --test <span class="se">\</span>
+</span><span class='line'>  -o <span class="nb">test</span> <span class="se">\</span>
+</span><span class='line'>  test.rs &gt;/dev/null 2&gt;<span class="p">&amp;</span>1
+</span><span class='line'><span class="k">if</span> <span class="o">[</span> <span class="s2">&quot;$?&quot;</span> -ne <span class="s2">&quot;0&quot;</span> <span class="o">]</span><span class="p">;</span> <span class="k">then</span>
+</span><span class='line'>  <span class="nb">exit </span>1
+</span><span class='line'><span class="k">fi</span>
+</span><span class='line'>
+</span><span class='line'><span class="nv">root</span><span class="o">=</span><span class="sb">`</span>dirname <span class="nv">$0</span><span class="sb">`</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">for</span> i in <span class="k">$(</span>seq <span class="m">1</span> 1000<span class="k">)</span><span class="p">;</span> <span class="k">do</span>
+</span><span class='line'>  <span class="nv">$root</span>/timeout.sh <span class="m">5</span> ./test --nocapture tcp::test::write_close_ip4 2&gt;<span class="p">&amp;</span><span class="m">1</span> <span class="p">|</span> tee log
+</span><span class='line'>  grep <span class="s2">&quot;Protocol wrong type for socket&quot;</span> log
+</span><span class='line'>  <span class="nv">RET</span><span class="o">=</span><span class="s2">&quot;$?&quot;</span>
+</span><span class='line'>  <span class="k">if</span> <span class="o">[</span> <span class="s2">&quot;$RET&quot;</span> -eq <span class="s2">&quot;0&quot;</span> <span class="o">]</span><span class="p">;</span> <span class="k">then</span>
+</span><span class='line'>          <span class="nb">exit </span>0
+</span><span class='line'>  <span class="k">elif</span> <span class="o">[</span> <span class="s2">&quot;$RET&quot;</span> -eq <span class="s2">&quot;143&quot;</span> <span class="o">]</span><span class="p">;</span> <span class="k">then</span>
+</span><span class='line'>          <span class="nb">exit </span>1
+</span><span class='line'>  <span class="k">fi</span>
+</span><span class='line'>  <span class="nb">echo</span>
+</span><span class='line'><span class="k">done</span>
+</span><span class='line'>
+</span><span class='line'><span class="nb">exit </span>1
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I used the helper script
+<a href="http://www.ict.griffith.edu.au/anthony/software/timeout.sh">timeout.sh</a> to
+time out tests in case C-Reduce accidentally made us an infinite loop.</p>
+
+<p>Finally we&rsquo;re ready to start running C-Reduce:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class='bash'><span class='line'>% creduce ./driver.sh test.rs
+</span><span class='line'><span class="o">===</span>&lt; <span class="m">30598</span> &gt;<span class="o">===</span>
+</span><span class='line'>running <span class="m">8</span> interestingness <span class="nb">test</span><span class="o">(</span>s<span class="o">)</span> in <span class="nv">parallel</span>
+</span><span class='line'><span class="o">===</span>&lt; pass_blank :: <span class="m">0</span> &gt;<span class="o">===</span>
+</span><span class='line'><span class="o">(</span>0.0 %, <span class="m">156170</span> bytes<span class="o">)</span>
+</span><span class='line'><span class="o">===</span>&lt; pass_clang_binsrch :: replace-function-def-with-decl &gt;<span class="o">===</span>
+</span><span class='line'><span class="o">===</span>&lt; pass_clang_binsrch :: remove-unused-function &gt;<span class="o">===</span>
+</span><span class='line'><span class="o">===</span>&lt; pass_lines :: <span class="m">0</span> &gt;<span class="o">===</span>
+</span><span class='line'><span class="o">(</span>-0.6 %, <span class="m">157231</span> bytes<span class="o">)</span>
+</span><span class='line'><span class="o">(</span>1.2 %, <span class="m">154323</span> bytes<span class="o">)</span>
+</span><span class='line'><span class="o">(</span>3.7 %, <span class="m">150455</span> bytes<span class="o">)</span>
+</span><span class='line'><span class="o">(</span>4.6 %, <span class="m">149074</span> bytes<span class="o">)</span>
+</span><span class='line'><span class="o">(</span>5.5 %, <span class="m">147639</span> bytes<span class="o">)</span>
+</span><span class='line'><span class="o">(</span>6.4 %, <span class="m">146172</span> bytes<span class="o">)</span>
+</span><span class='line'><span class="o">(</span>7.3 %, <span class="m">144881</span> bytes<span class="o">)</span>
+</span><span class='line'><span class="o">(</span>7.7 %, <span class="m">144187</span> bytes<span class="o">)</span>
+</span><span class='line'><span class="o">(</span>9.1 %, <span class="m">141936</span> bytes<span class="o">)</span>
+</span><span class='line'><span class="o">(</span>9.9 %, <span class="m">140706</span> bytes<span class="o">)</span>
+</span><span class='line'><span class="o">(</span>10.3 %, <span class="m">140104</span> bytes<span class="o">)</span>
+</span><span class='line'><span class="o">(</span>10.4 %, <span class="m">139998</span> bytes<span class="o">)</span>
+</span><span class='line'>...
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I let it run in the background for sometime in the background while I did some
+other things. When I got back, C-Reduce automatically reduced the file from
+153KB to a slim 22KB. I then reran rust with the lints enabled to manually cut
+out the dead code C-Reduce failed to remove, and flattened away some
+unnecessary structs and methods. I was finally left with:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+<span class='line-number'>108</span>
+<span class='line-number'>109</span>
+<span class='line-number'>110</span>
+<span class='line-number'>111</span>
+<span class='line-number'>112</span>
+<span class='line-number'>113</span>
+<span class='line-number'>114</span>
+<span class='line-number'>115</span>
+<span class='line-number'>116</span>
+<span class='line-number'>117</span>
+<span class='line-number'>118</span>
+<span class='line-number'>119</span>
+<span class='line-number'>120</span>
+<span class='line-number'>121</span>
+<span class='line-number'>122</span>
+<span class='line-number'>123</span>
+<span class='line-number'>124</span>
+<span class='line-number'>125</span>
+<span class='line-number'>126</span>
+<span class='line-number'>127</span>
+<span class='line-number'>128</span>
+<span class='line-number'>129</span>
+<span class='line-number'>130</span>
+<span class='line-number'>131</span>
+<span class='line-number'>132</span>
+<span class='line-number'>133</span>
+<span class='line-number'>134</span>
+<span class='line-number'>135</span>
+<span class='line-number'>136</span>
+<span class='line-number'>137</span>
+<span class='line-number'>138</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">extern</span> <span class="n">crate</span> <span class="n">libc</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="kn">use</span> <span class="n">std</span><span class="o">::</span><span class="n">io</span><span class="o">::</span><span class="n">net</span><span class="o">::</span><span class="n">ip</span><span class="o">::</span><span class="n">Ipv4Addr</span><span class="p">;</span>
+</span><span class='line'><span class="kn">use</span> <span class="n">std</span><span class="o">::</span><span class="n">io</span><span class="o">::</span><span class="n">net</span><span class="o">::</span><span class="n">ip</span><span class="o">::</span><span class="n">SocketAddr</span><span class="p">;</span>
+</span><span class='line'><span class="kn">use</span> <span class="n">std</span><span class="o">::</span><span class="n">io</span><span class="o">::</span><span class="n">net</span><span class="o">::</span><span class="n">ip</span><span class="o">::</span><span class="n">ToSocketAddr</span><span class="p">;</span>
+</span><span class='line'><span class="kn">use</span> <span class="n">std</span><span class="o">::</span><span class="n">io</span><span class="o">::</span><span class="n">net</span><span class="o">::</span><span class="n">ip</span><span class="p">;</span>
+</span><span class='line'><span class="kn">use</span> <span class="n">std</span><span class="o">::</span><span class="n">io</span><span class="o">::</span><span class="n">test</span><span class="o">::</span><span class="n">next_test_ip4</span><span class="p">;</span>
+</span><span class='line'><span class="kn">use</span> <span class="n">std</span><span class="o">::</span><span class="n">mem</span><span class="p">;</span>
+</span><span class='line'><span class="kn">use</span> <span class="n">std</span><span class="o">::</span><span class="n">num</span><span class="o">::</span><span class="nb">Int</span><span class="p">;</span>
+</span><span class='line'><span class="kn">use</span> <span class="n">std</span><span class="o">::</span><span class="n">os</span><span class="o">::</span><span class="n">errno</span><span class="p">;</span>
+</span><span class='line'><span class="kn">use</span> <span class="n">std</span><span class="o">::</span><span class="n">os</span><span class="o">::</span><span class="n">error_string</span><span class="p">;</span>
+</span><span class='line'><span class="kn">use</span> <span class="n">std</span><span class="o">::</span><span class="n">ptr</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">fn</span> <span class="n">bind</span><span class="p">(</span><span class="n">addr</span><span class="o">:</span> <span class="n">ip</span><span class="o">::</span><span class="n">SocketAddr</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">libc</span><span class="o">::</span><span class="n">c_int</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">unsafe</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">fd</span> <span class="o">=</span> <span class="k">match</span> <span class="n">libc</span><span class="o">::</span><span class="n">socket</span><span class="p">(</span><span class="n">libc</span><span class="o">::</span><span class="n">AF_INET</span><span class="p">,</span> <span class="n">libc</span><span class="o">::</span><span class="n">SOCK_STREAM</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>            <span class="o">-</span><span class="mi">1</span> <span class="o">=&gt;</span> <span class="n">panic</span><span class="o">!</span><span class="p">(),</span>
+</span><span class='line'>            <span class="n">fd</span> <span class="o">=&gt;</span> <span class="n">fd</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">};</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="k">mut</span> <span class="n">storage</span> <span class="o">=</span> <span class="n">mem</span><span class="o">::</span><span class="n">zeroed</span><span class="p">();</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">len</span> <span class="o">=</span> <span class="n">addr_to_sockaddr</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">storage</span><span class="p">);</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">addrp</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">storage</span> <span class="k">as</span> <span class="o">*</span><span class="kr">const</span> <span class="n">_</span> <span class="k">as</span> <span class="o">*</span><span class="kr">const</span> <span class="n">libc</span><span class="o">::</span><span class="n">sockaddr</span><span class="p">;</span>
+</span><span class='line'>        <span class="k">match</span> <span class="n">libc</span><span class="o">::</span><span class="n">bind</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">addrp</span><span class="p">,</span> <span class="n">len</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>            <span class="o">-</span><span class="mi">1</span> <span class="o">=&gt;</span> <span class="n">panic</span><span class="o">!</span><span class="p">(),</span>
+</span><span class='line'>            <span class="n">_</span> <span class="o">=&gt;</span> <span class="n">fd</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">fn</span> <span class="n">listen</span><span class="p">(</span><span class="n">fd</span><span class="o">:</span> <span class="n">libc</span><span class="o">::</span><span class="n">c_int</span><span class="p">,</span> <span class="n">backlog</span><span class="o">:</span> <span class="kt">int</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">unsafe</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">match</span> <span class="n">libc</span><span class="o">::</span><span class="n">listen</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">backlog</span> <span class="k">as</span> <span class="n">libc</span><span class="o">::</span><span class="n">c_int</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>            <span class="o">-</span><span class="mi">1</span> <span class="o">=&gt;</span> <span class="n">panic</span><span class="o">!</span><span class="p">(),</span>
+</span><span class='line'>            <span class="n">_</span> <span class="o">=&gt;</span> <span class="p">{}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">fn</span> <span class="n">accept</span><span class="p">(</span><span class="n">fd</span><span class="o">:</span> <span class="n">libc</span><span class="o">::</span><span class="n">c_int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">libc</span><span class="o">::</span><span class="n">c_int</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">unsafe</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">x</span> <span class="o">=</span> <span class="n">libc</span><span class="o">::</span><span class="n">accept</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">ptr</span><span class="o">::</span><span class="n">null_mut</span><span class="p">(),</span> <span class="n">ptr</span><span class="o">::</span><span class="n">null_mut</span><span class="p">());</span>
+</span><span class='line'>        <span class="k">match</span> <span class="n">x</span> <span class="p">{</span>
+</span><span class='line'>            <span class="o">-</span><span class="mi">1</span> <span class="o">=&gt;</span> <span class="n">panic</span><span class="o">!</span><span class="p">(),</span>
+</span><span class='line'>            <span class="n">fd</span> <span class="o">=&gt;</span> <span class="n">fd</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">fn</span> <span class="n">connect</span><span class="p">(</span><span class="n">addr</span><span class="o">:</span> <span class="n">SocketAddr</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">libc</span><span class="o">::</span><span class="n">c_int</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">unsafe</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">fd</span> <span class="o">=</span> <span class="k">match</span> <span class="n">libc</span><span class="o">::</span><span class="n">socket</span><span class="p">(</span><span class="n">libc</span><span class="o">::</span><span class="n">AF_INET</span><span class="p">,</span> <span class="n">libc</span><span class="o">::</span><span class="n">SOCK_STREAM</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>            <span class="o">-</span><span class="mi">1</span> <span class="o">=&gt;</span> <span class="n">panic</span><span class="o">!</span><span class="p">(),</span>
+</span><span class='line'>            <span class="n">fd</span> <span class="o">=&gt;</span> <span class="n">fd</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">};</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="k">mut</span> <span class="n">storage</span> <span class="o">=</span> <span class="n">mem</span><span class="o">::</span><span class="n">zeroed</span><span class="p">();</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">len</span> <span class="o">=</span> <span class="n">addr_to_sockaddr</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">storage</span><span class="p">);</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">addrp</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">storage</span> <span class="k">as</span> <span class="o">*</span><span class="kr">const</span> <span class="n">_</span> <span class="k">as</span> <span class="o">*</span><span class="kr">const</span> <span class="n">libc</span><span class="o">::</span><span class="n">sockaddr</span><span class="p">;</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">x</span> <span class="o">=</span> <span class="n">libc</span><span class="o">::</span><span class="n">connect</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">addrp</span><span class="p">,</span> <span class="n">len</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">fd</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">fn</span> <span class="n">write</span><span class="p">(</span><span class="n">fd</span><span class="o">:</span> <span class="n">libc</span><span class="o">::</span><span class="n">c_int</span><span class="p">,</span> <span class="n">buf</span><span class="o">:</span> <span class="o">&amp;</span><span class="p">[</span><span class="kt">u8</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="kt">uint</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">unsafe</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">len</span> <span class="o">=</span> <span class="n">buf</span><span class="p">.</span><span class="n">len</span><span class="p">();</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">ret</span> <span class="o">=</span> <span class="n">libc</span><span class="o">::</span><span class="n">send</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">buf</span><span class="p">.</span><span class="n">as_ptr</span><span class="p">()</span> <span class="k">as</span> <span class="o">*</span><span class="kr">const</span> <span class="n">_</span><span class="p">,</span> <span class="n">len</span> <span class="k">as</span> <span class="n">libc</span><span class="o">::</span><span class="n">size_t</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">as</span> <span class="kt">i64</span><span class="p">;</span>
+</span><span class='line'>        <span class="k">if</span> <span class="n">ret</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nb">Err</span><span class="p">(</span><span class="n">errno</span><span class="p">())</span>
+</span><span class='line'>        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nb">Ok</span><span class="p">(())</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">fn</span> <span class="n">close</span><span class="p">(</span><span class="n">fd</span><span class="o">:</span> <span class="n">libc</span><span class="o">::</span><span class="n">c_int</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">unsafe</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">x</span> <span class="o">=</span> <span class="n">libc</span><span class="o">::</span><span class="n">close</span><span class="p">(</span><span class="n">fd</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">assert_eq</span><span class="o">!</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">fn</span> <span class="n">addr_to_sockaddr</span><span class="p">(</span><span class="n">addr</span><span class="o">:</span> <span class="n">SocketAddr</span><span class="p">,</span> <span class="n">storage</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">libc</span><span class="o">::</span><span class="n">sockaddr_storage</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">libc</span><span class="o">::</span><span class="n">socklen_t</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">inaddr</span> <span class="o">=</span> <span class="k">match</span> <span class="n">addr</span><span class="p">.</span><span class="n">ip</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">Ipv4Addr</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">c</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>            <span class="kd">let</span> <span class="n">ip</span> <span class="o">=</span> <span class="n">a</span> <span class="k">as</span> <span class="kt">u32</span> <span class="o">&lt;&lt;</span> <span class="mi">24</span> <span class="o">|</span> <span class="n">b</span> <span class="k">as</span> <span class="kt">u32</span> <span class="o">&lt;&lt;</span> <span class="mi">16</span> <span class="o">|</span> <span class="n">c</span> <span class="k">as</span> <span class="kt">u32</span> <span class="o">&lt;&lt;</span> <span class="mi">8</span> <span class="o">|</span> <span class="n">d</span> <span class="k">as</span> <span class="kt">u32</span> <span class="o">&lt;&lt;</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>            <span class="n">libc</span><span class="o">::</span><span class="n">in_addr</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">s_addr</span><span class="o">:</span> <span class="nb">Int</span><span class="o">::</span><span class="n">from_be</span><span class="p">(</span><span class="n">ip</span><span class="p">),</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>        <span class="n">_</span> <span class="o">=&gt;</span> <span class="n">panic</span><span class="o">!</span><span class="p">(),</span>
+</span><span class='line'>    <span class="p">};</span>
+</span><span class='line'>    <span class="k">unsafe</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">storage</span> <span class="o">=</span> <span class="n">storage</span> <span class="k">as</span> <span class="o">*</span><span class="k">mut</span> <span class="n">_</span> <span class="k">as</span> <span class="o">*</span><span class="k">mut</span> <span class="n">libc</span><span class="o">::</span><span class="n">sockaddr_in</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">(</span><span class="o">*</span><span class="n">storage</span><span class="p">).</span><span class="n">sin_family</span> <span class="o">=</span> <span class="n">libc</span><span class="o">::</span><span class="n">AF_INET</span> <span class="k">as</span> <span class="n">libc</span><span class="o">::</span><span class="n">sa_family_t</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">(</span><span class="o">*</span><span class="n">storage</span><span class="p">).</span><span class="n">sin_port</span> <span class="o">=</span> <span class="n">addr</span><span class="p">.</span><span class="n">port</span><span class="p">.</span><span class="n">to_be</span><span class="p">();</span>
+</span><span class='line'>        <span class="p">(</span><span class="o">*</span><span class="n">storage</span><span class="p">).</span><span class="n">sin_addr</span> <span class="o">=</span> <span class="n">inaddr</span><span class="p">;</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">len</span> <span class="o">=</span> <span class="n">mem</span><span class="o">::</span><span class="n">size_of</span><span class="o">::&lt;</span><span class="n">libc</span><span class="o">::</span><span class="n">sockaddr_in</span><span class="o">&gt;</span><span class="p">();</span>
+</span><span class='line'>        <span class="n">len</span> <span class="k">as</span> <span class="n">libc</span><span class="o">::</span><span class="n">socklen_t</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">fn</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">addr</span> <span class="o">=</span> <span class="n">next_test_ip4</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">listener</span> <span class="o">=</span> <span class="n">bind</span><span class="p">(</span><span class="n">addr</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">listen</span><span class="p">(</span><span class="n">listener</span><span class="p">,</span> <span class="mi">128</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="nb">spawn</span><span class="p">(</span><span class="k">proc</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">addresses</span> <span class="o">=</span> <span class="n">addr</span><span class="p">.</span><span class="n">to_socket_addr_all</span><span class="p">().</span><span class="n">unwrap</span><span class="p">();</span>
+</span><span class='line'>        <span class="k">for</span> <span class="n">addr</span> <span class="k">in</span> <span class="n">addresses</span><span class="p">.</span><span class="n">into_iter</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>            <span class="kd">let</span> <span class="n">fd</span> <span class="o">=</span> <span class="n">connect</span><span class="p">(</span><span class="n">addr</span><span class="p">);</span>
+</span><span class='line'>            <span class="n">close</span><span class="p">(</span><span class="n">fd</span><span class="p">);</span>
+</span><span class='line'>            <span class="k">return</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">});</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">stream</span> <span class="o">=</span> <span class="n">accept</span><span class="p">(</span><span class="n">listener</span><span class="p">);</span>
+</span><span class='line'>    <span class="k">loop</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">x</span> <span class="o">=</span> <span class="n">write</span><span class="p">(</span><span class="n">stream</span><span class="p">,</span> <span class="p">[</span><span class="mi">0</span><span class="p">]);</span>
+</span><span class='line'>        <span class="k">match</span> <span class="n">x</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nb">Ok</span><span class="p">(..)</span> <span class="o">=&gt;</span> <span class="p">{</span> <span class="p">}</span>
+</span><span class='line'>            <span class="nb">Err</span><span class="p">(</span><span class="n">e</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="kd">let</span> <span class="n">e</span> <span class="o">=</span> <span class="n">e</span> <span class="k">as</span> <span class="kt">i32</span><span class="p">;</span>
+</span><span class='line'>                <span class="n">assert</span><span class="o">!</span><span class="p">(</span>
+</span><span class='line'>                    <span class="n">e</span> <span class="o">==</span> <span class="n">libc</span><span class="o">::</span><span class="n">ECONNREFUSED</span> <span class="o">||</span>
+</span><span class='line'>                    <span class="n">e</span> <span class="o">==</span> <span class="n">libc</span><span class="o">::</span><span class="n">EPIPE</span> <span class="o">||</span>
+</span><span class='line'>                    <span class="n">e</span> <span class="o">==</span> <span class="n">libc</span><span class="o">::</span><span class="n">ECONNABORTED</span><span class="p">,</span>
+</span><span class='line'>                    <span class="s">&quot;unknown error: {} {}&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">error_string</span><span class="p">(</span><span class="n">e</span> <span class="k">as</span> <span class="kt">uint</span><span class="p">));</span>
+</span><span class='line'>                <span class="k">break</span><span class="p">;</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">close</span><span class="p">(</span><span class="n">stream</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">close</span><span class="p">(</span><span class="n">listener</span><span class="p">);</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This snippet reproduces the same <code>EPROTOTYPE</code> that we started with at the top
+of the post. Pretty cool that we got here without much effort?</p>
+
+<p>Now At this point you might say to yourself that couldn&rsquo;t I have extracted this
+out myself?  And yeah, you would be right. This is a pretty much a c-in-rust
+implementation of this bug. But what&rsquo;s great about using C-Reduce here is that
+I only had to make some very rough guesses about what files were and were not
+important to include in my <code>test.rs</code>. Eventually when we get some rust plugins
+written for C-Reduce I probably could just point it at the whole <code>libstd</code> let
+C-Reduce do it&rsquo;s thing. Doing this by hand can be a pretty long and painful
+manual process, especially if we&rsquo;re trying to debug a codegen or runtime bug.
+In the past I&rsquo;ve spent hours reducing some codegen bugs down into a small
+snippet that C-Reduce was also able to produce in a couple minutes.</p>
+
+<p>The last step with this code was to eliminate Rust from the picture, and
+translate this code into C:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+<span class='line-number'>108</span>
+<span class='line-number'>109</span>
+<span class='line-number'>110</span>
+<span class='line-number'>111</span>
+<span class='line-number'>112</span>
+<span class='line-number'>113</span>
+<span class='line-number'>114</span>
+<span class='line-number'>115</span>
+<span class='line-number'>116</span>
+<span class='line-number'>117</span>
+<span class='line-number'>118</span>
+<span class='line-number'>119</span>
+<span class='line-number'>120</span>
+<span class='line-number'>121</span>
+<span class='line-number'>122</span>
+<span class='line-number'>123</span>
+<span class='line-number'>124</span>
+<span class='line-number'>125</span>
+<span class='line-number'>126</span>
+<span class='line-number'>127</span>
+<span class='line-number'>128</span>
+<span class='line-number'>129</span>
+<span class='line-number'>130</span>
+<span class='line-number'>131</span>
+<span class='line-number'>132</span>
+<span class='line-number'>133</span>
+<span class='line-number'>134</span>
+<span class='line-number'>135</span>
+<span class='line-number'>136</span>
+<span class='line-number'>137</span>
+<span class='line-number'>138</span>
+<span class='line-number'>139</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cp">#include &lt;stdio.h&gt;</span>
+</span><span class='line'><span class="cp">#include &lt;unistd.h&gt;</span>
+</span><span class='line'><span class="cp">#include &lt;stdlib.h&gt;</span>
+</span><span class='line'><span class="cp">#include &lt;strings.h&gt;</span>
+</span><span class='line'><span class="cp">#include &lt;sys/socket.h&gt;</span>
+</span><span class='line'><span class="cp">#include &lt;netinet/in.h&gt;</span>
+</span><span class='line'><span class="cp">#include &lt;pthread.h&gt;</span>
+</span><span class='line'><span class="cp">#include &lt;errno.h&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="kt">int</span> <span class="nf">do_server</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>  <span class="kt">int</span> <span class="n">fd</span><span class="p">;</span>
+</span><span class='line'>  <span class="k">struct</span> <span class="n">sockaddr_in</span> <span class="n">server_addr</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">fd</span> <span class="o">=</span> <span class="n">socket</span><span class="p">(</span><span class="n">AF_INET</span><span class="p">,</span> <span class="n">SOCK_STREAM</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">fd</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">perror</span><span class="p">(</span><span class="s">&quot;error socket server&quot;</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">bzero</span><span class="p">((</span><span class="kt">char</span><span class="o">*</span><span class="p">)</span> <span class="o">&amp;</span><span class="n">server_addr</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">server_addr</span><span class="p">));</span>
+</span><span class='line'>  <span class="n">server_addr</span><span class="p">.</span><span class="n">sin_family</span> <span class="o">=</span> <span class="n">AF_INET</span><span class="p">;</span>
+</span><span class='line'>  <span class="n">server_addr</span><span class="p">.</span><span class="n">sin_addr</span><span class="p">.</span><span class="n">s_addr</span> <span class="o">=</span> <span class="n">INADDR_ANY</span><span class="p">;</span>
+</span><span class='line'>  <span class="n">server_addr</span><span class="p">.</span><span class="n">sin_port</span> <span class="o">=</span> <span class="n">htons</span><span class="p">(</span><span class="mi">9600</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">bind</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="p">(</span><span class="k">struct</span> <span class="n">sockaddr</span> <span class="o">*</span><span class="p">)</span> <span class="o">&amp;</span><span class="n">server_addr</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">server_addr</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">perror</span><span class="p">(</span><span class="s">&quot;error binding&quot;</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="k">return</span> <span class="n">fd</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kt">void</span><span class="o">*</span> <span class="nf">do_child_thread</span><span class="p">(</span><span class="kt">void</span><span class="o">*</span> <span class="n">unused</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>  <span class="k">struct</span> <span class="n">sockaddr_in</span> <span class="n">client_addr</span><span class="p">;</span>
+</span><span class='line'>  <span class="kt">int</span> <span class="n">fd</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">fd</span> <span class="o">=</span> <span class="n">socket</span><span class="p">(</span><span class="n">AF_INET</span><span class="p">,</span> <span class="n">SOCK_STREAM</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">fd</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">perror</span><span class="p">(</span><span class="s">&quot;error socket client&quot;</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">bzero</span><span class="p">((</span><span class="kt">char</span><span class="o">*</span><span class="p">)</span> <span class="o">&amp;</span><span class="n">client_addr</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">client_addr</span><span class="p">));</span>
+</span><span class='line'>  <span class="n">client_addr</span><span class="p">.</span><span class="n">sin_family</span> <span class="o">=</span> <span class="n">AF_INET</span><span class="p">;</span>
+</span><span class='line'>  <span class="n">client_addr</span><span class="p">.</span><span class="n">sin_addr</span><span class="p">.</span><span class="n">s_addr</span> <span class="o">=</span> <span class="n">INADDR_ANY</span><span class="p">;</span>
+</span><span class='line'>  <span class="n">client_addr</span><span class="p">.</span><span class="n">sin_port</span> <span class="o">=</span> <span class="n">htons</span><span class="p">(</span><span class="mi">9600</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">connect</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="p">(</span><span class="k">struct</span> <span class="n">sockaddr</span> <span class="o">*</span><span class="p">)</span> <span class="o">&amp;</span><span class="n">client_addr</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">client_addr</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">perror</span><span class="p">(</span><span class="s">&quot;error connect&quot;</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;closing client socket</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">close</span><span class="p">(</span><span class="n">fd</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">perror</span><span class="p">(</span><span class="s">&quot;error close client socket&quot;</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;closed client socket</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kt">int</span> <span class="nf">main</span><span class="p">(</span><span class="kt">int</span> <span class="n">argc</span><span class="p">,</span> <span class="kt">char</span><span class="o">**</span> <span class="n">argv</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>  <span class="kt">int</span> <span class="n">server_fd</span><span class="p">,</span> <span class="n">client_fd</span><span class="p">;</span>
+</span><span class='line'>  <span class="kt">socklen_t</span> <span class="n">client_len</span><span class="p">;</span>
+</span><span class='line'>  <span class="k">struct</span> <span class="n">sockaddr_in</span> <span class="n">client_addr</span><span class="p">;</span>
+</span><span class='line'>  <span class="kt">char</span> <span class="n">buf</span><span class="p">[]</span> <span class="o">=</span> <span class="p">{</span> <span class="sc">&#39;a&#39;</span><span class="p">,</span> <span class="sc">&#39;\n&#39;</span> <span class="p">};</span>
+</span><span class='line'>  <span class="kt">pthread_t</span> <span class="n">child_thread</span><span class="p">;</span>
+</span><span class='line'>  <span class="kt">int</span> <span class="n">rc</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">signal</span><span class="p">(</span><span class="n">SIGPIPE</span><span class="p">,</span> <span class="n">SIG_IGN</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">server_fd</span> <span class="o">=</span> <span class="n">do_server</span><span class="p">();</span>
+</span><span class='line'>  <span class="n">rc</span> <span class="o">=</span> <span class="n">listen</span><span class="p">(</span><span class="n">server_fd</span><span class="p">,</span> <span class="mi">5</span><span class="p">);</span>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">rc</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">perror</span><span class="p">(</span><span class="s">&quot;error listen&quot;</span><span class="p">);</span>
+</span><span class='line'>    <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">rc</span> <span class="o">=</span> <span class="n">pthread_create</span><span class="p">(</span><span class="o">&amp;</span><span class="n">child_thread</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="n">do_child_thread</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">);</span>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">rc</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">perror</span><span class="p">(</span><span class="s">&quot;error pthread_create&quot;</span><span class="p">);</span>
+</span><span class='line'>    <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">client_len</span> <span class="o">=</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">client_addr</span><span class="p">);</span>
+</span><span class='line'>  <span class="n">client_fd</span> <span class="o">=</span> <span class="n">accept</span><span class="p">(</span><span class="n">server_fd</span><span class="p">,</span> <span class="p">(</span><span class="k">struct</span> <span class="n">sockaddr</span> <span class="o">*</span><span class="p">)</span> <span class="o">&amp;</span><span class="n">client_addr</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">client_len</span><span class="p">);</span>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">client_fd</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">perror</span><span class="p">(</span><span class="s">&quot;error accept&quot;</span><span class="p">);</span>
+</span><span class='line'>    <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="k">while</span> <span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;before send</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">rc</span> <span class="o">=</span> <span class="n">send</span><span class="p">(</span><span class="n">client_fd</span><span class="p">,</span> <span class="n">buf</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">buf</span><span class="p">),</span> <span class="mi">0</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;after send: %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">rc</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">rc</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>      <span class="k">if</span> <span class="p">(</span><span class="n">errno</span> <span class="o">==</span> <span class="n">EPIPE</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">break</span><span class="p">;</span>
+</span><span class='line'>      <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">so_type</span><span class="p">;</span>
+</span><span class='line'>        <span class="kt">socklen_t</span> <span class="n">so_len</span> <span class="o">=</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">so_type</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">getsockopt</span><span class="p">(</span><span class="n">client_fd</span><span class="p">,</span> <span class="n">SOL_SOCKET</span><span class="p">,</span> <span class="n">SO_TYPE</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">so_type</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">so_len</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;type: %d %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">so_type</span><span class="p">,</span> <span class="n">SOCK_STREAM</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">perror</span><span class="p">(</span><span class="s">&quot;error send&quot;</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>      <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;before server closing client fd</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">close</span><span class="p">(</span><span class="n">client_fd</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">perror</span><span class="p">(</span><span class="s">&quot;error close client&quot;</span><span class="p">);</span>
+</span><span class='line'>    <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'>  <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;after server closing client fd</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;before server closing fd</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">close</span><span class="p">(</span><span class="n">server_fd</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">perror</span><span class="p">(</span><span class="s">&quot;error close server&quot;</span><span class="p">);</span>
+</span><span class='line'>    <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'>  <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;after server closing fd</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">rc</span> <span class="o">=</span> <span class="n">pthread_join</span><span class="p">(</span><span class="n">child_thread</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">);</span>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">rc</span> <span class="o">!=</span> <span class="mi">0</span> <span class="o">&amp;&amp;</span> <span class="n">rc</span> <span class="o">!=</span> <span class="n">ESRCH</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;error pthread_join: %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">rc</span><span class="p">);</span>
+</span><span class='line'>    <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This also produces <code>EPROTOTYPE</code>, so we can eliminate Rust altogther. But lets
+keep digging. What exactly is producing this error? If I was on Linux, I&rsquo;d use
+<code>strace</code>, but that program isn&rsquo;t on Macs. There&rsquo;s a similar tool called
+<code>dtruss</code>, but that seemed to slow things down enough that the <code>EPROTOTYPE</code>
+never happened. Fortunately though there is another program called <code>errinfo</code>,
+that just prints the <code>errno</code> along with every syscall. In one terminal I ran
+<code>while ./test; do sleep 0.1; done</code>. In the other:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="o">%</span> <span class="n">sudo</span> <span class="n">errinfo</span> <span class="o">-</span><span class="n">n</span> <span class="n">test</span>
+</span><span class='line'><span class="p">...</span>
+</span><span class='line'>           <span class="n">a</span><span class="p">.</span><span class="n">out</span>           <span class="n">stat64</span>    <span class="mi">0</span>
+</span><span class='line'>           <span class="n">a</span><span class="p">.</span><span class="n">out</span>             <span class="n">open</span>    <span class="mi">0</span>
+</span><span class='line'>           <span class="n">a</span><span class="p">.</span><span class="n">out</span> <span class="n">psynch_mutexwait</span>    <span class="mi">0</span>
+</span><span class='line'>           <span class="n">a</span><span class="p">.</span><span class="n">out</span>   <span class="n">write_nocancel</span>    <span class="mi">0</span>
+</span><span class='line'>           <span class="n">a</span><span class="p">.</span><span class="n">out</span>           <span class="n">sendto</span>    <span class="mi">0</span>
+</span><span class='line'>           <span class="n">a</span><span class="p">.</span><span class="n">out</span>   <span class="n">write_nocancel</span>    <span class="mi">0</span>
+</span><span class='line'>           <span class="n">a</span><span class="p">.</span><span class="n">out</span>   <span class="n">write_nocancel</span>    <span class="mi">0</span>
+</span><span class='line'>           <span class="n">a</span><span class="p">.</span><span class="n">out</span>           <span class="n">sendto</span>   <span class="mi">41</span>  <span class="n">Protocol</span> <span class="n">wrong</span> <span class="n">type</span> <span class="k">for</span> <span class="n">socket</span>
+</span><span class='line'>           <span class="n">a</span><span class="p">.</span><span class="n">out</span>   <span class="n">write_nocancel</span>    <span class="mi">0</span>
+</span><span class='line'>           <span class="n">a</span><span class="p">.</span><span class="n">out</span>       <span class="n">getsockopt</span>    <span class="mi">0</span>
+</span><span class='line'><span class="p">...</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Right there we see our <code>sendto</code> syscall is actually returning the <code>EPROTOTYPE</code>.
+This <code>errno</code> then is definitely being created inside the OSX kernel, not in any
+userspace code. Fortunately, most of the Apple kernel, XNU, is open sourced, so
+we can dig down to what&rsquo;ll be the my last layer. You can find the tarballs at
+<a href="http://www.opensource.apple.com/.">http://www.opensource.apple.com/.</a> But I&rsquo;d rather use the
+<a href="https://github.com/opensource-apple/xnu">unoffical GitHub repository</a>. Using GitHub&rsquo;s
+search tools, We can find all 17 instances of
+<a href="https://github.com/opensource-apple/xnu/search?l=c&amp;q=EPROTOTYPE&amp;utf8=%E2%9C%93">EPROTOTYPE</a>
+in the codebase. Now I don&rsquo;t know the XNU codebase, but there are still some
+really interesting things we can find. The first is in
+<a href="https://github.com/opensource-apple/xnu/blob/bb7368935f659ada117c0889612e379c97eb83b3/bsd/kern/uipc_usrreq.c#L408">bsd/kern/uipc_usrreq.c</a>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/*</span>
+</span><span class='line'><span class="cm"> * Returns:  0      Success</span>
+</span><span class='line'><span class="cm"> *    EINVAL</span>
+</span><span class='line'><span class="cm"> *    EOPNOTSUPP</span>
+</span><span class='line'><span class="cm"> *    EPIPE</span>
+</span><span class='line'><span class="cm"> *    ENOTCONN</span>
+</span><span class='line'><span class="cm"> *    EISCONN</span>
+</span><span class='line'><span class="cm"> *  unp_internalize:EINVAL</span>
+</span><span class='line'><span class="cm"> *  unp_internalize:EBADF</span>
+</span><span class='line'><span class="cm"> *  unp_connect:EAFNOSUPPORT  Address family not supported</span>
+</span><span class='line'><span class="cm"> *  unp_connect:EINVAL        Invalid argument</span>
+</span><span class='line'><span class="cm"> *  unp_connect:ENOTSOCK      Not a socket</span>
+</span><span class='line'><span class="cm"> *  unp_connect:ECONNREFUSED  Connection refused</span>
+</span><span class='line'><span class="cm"> *  unp_connect:EISCONN       Socket is connected</span>
+</span><span class='line'><span class="cm"> *  unp_connect:EPROTOTYPE    Protocol wrong type for socket</span>
+</span><span class='line'><span class="cm"> *  unp_connect:???</span>
+</span><span class='line'><span class="cm"> *  sbappendaddr:ENOBUFS      [5th argument, contents modified]</span>
+</span><span class='line'><span class="cm"> *  sbappendaddr:???          [whatever a filter author chooses]</span>
+</span><span class='line'><span class="cm"> */</span>
+</span><span class='line'><span class="k">static</span> <span class="kt">int</span>
+</span><span class='line'><span class="nf">uipc_send</span><span class="p">(</span><span class="k">struct</span> <span class="n">socket</span> <span class="o">*</span><span class="n">so</span><span class="p">,</span> <span class="kt">int</span> <span class="n">flags</span><span class="p">,</span> <span class="k">struct</span> <span class="n">mbuf</span> <span class="o">*</span><span class="n">m</span><span class="p">,</span> <span class="k">struct</span> <span class="n">sockaddr</span> <span class="o">*</span><span class="n">nam</span><span class="p">,</span>
+</span><span class='line'>    <span class="k">struct</span> <span class="n">mbuf</span> <span class="o">*</span><span class="n">control</span><span class="p">,</span> <span class="kt">proc_t</span> <span class="n">p</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'><span class="p">...</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Hey look at that! There&rsquo;s handler for the <code>send</code> syscall (although for IPC, not
+TCP) that actually documents that it can return <code>EPROTOTYPE</code>! While it doesn&rsquo;t
+explain exactly how this can happen, the fact it mentions <code>unp_connect</code> hints
+that <code>uipc_send</code> may trigger a connect, and that&rsquo;s exactly what we find a
+couple lines into the function:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="p">...</span>
+</span><span class='line'>    <span class="cm">/* Connect if not connected yet. */</span>
+</span><span class='line'>    <span class="cm">/*</span>
+</span><span class='line'><span class="cm">     * Note: A better implementation would complain</span>
+</span><span class='line'><span class="cm">     * if not equal to the peer&#39;s address.</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="k">if</span> <span class="p">((</span><span class="n">so</span><span class="o">-&gt;</span><span class="n">so_state</span> <span class="o">&amp;</span> <span class="n">SS_ISCONNECTED</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>      <span class="k">if</span> <span class="p">(</span><span class="n">nam</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">error</span> <span class="o">=</span> <span class="n">unp_connect</span><span class="p">(</span><span class="n">so</span><span class="p">,</span> <span class="n">nam</span><span class="p">,</span> <span class="n">p</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">error</span><span class="p">)</span>
+</span><span class='line'>          <span class="k">break</span><span class="p">;</span>  <span class="cm">/* XXX */</span>
+</span><span class='line'>      <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">error</span> <span class="o">=</span> <span class="n">ENOTCONN</span><span class="p">;</span>
+</span><span class='line'>        <span class="k">break</span><span class="p">;</span>
+</span><span class='line'>      <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">...</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The fact that the comment says the socket might not be connected yet when we&rsquo;re
+doing a <code>send</code> hints that Apple may have introduced some level of asynchrony
+and preemption to sockets. So if we trigger the actual connect here, it could
+then return <code>EPROTOTYPE</code>, which makes sense. Unfortunately that&rsquo;s still not
+quite the behavior we&rsquo;re seeing. We&rsquo;re not getting <code>EPROTOTYPE</code> on our first
+write, but after we&rsquo;ve done a couple.</p>
+
+<p>I believe we find that behavior in the actual TCP syscall file,
+<a href="https://github.com/opensource-apple/xnu/blob/bb7368935f659ada117c0889612e379c97eb83b3/bsd/netinet/tcp_usrreq.c#L914-L948">bsd/netinet/tcp_usrreq.c</a>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">int</span>
+</span><span class='line'><span class="nf">tcp_usr_send</span><span class="p">(</span><span class="k">struct</span> <span class="n">socket</span> <span class="o">*</span><span class="n">so</span><span class="p">,</span> <span class="kt">int</span> <span class="n">flags</span><span class="p">,</span> <span class="k">struct</span> <span class="n">mbuf</span> <span class="o">*</span><span class="n">m</span><span class="p">,</span>
+</span><span class='line'>     <span class="k">struct</span> <span class="n">sockaddr</span> <span class="o">*</span><span class="n">nam</span><span class="p">,</span> <span class="k">struct</span> <span class="n">mbuf</span> <span class="o">*</span><span class="n">control</span><span class="p">,</span> <span class="k">struct</span> <span class="n">proc</span> <span class="o">*</span><span class="n">p</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>  <span class="kt">int</span> <span class="n">error</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>  <span class="k">struct</span> <span class="n">inpcb</span> <span class="o">*</span><span class="n">inp</span> <span class="o">=</span> <span class="n">sotoinpcb</span><span class="p">(</span><span class="n">so</span><span class="p">);</span>
+</span><span class='line'>  <span class="k">struct</span> <span class="n">tcpcb</span> <span class="o">*</span><span class="n">tp</span><span class="p">;</span>
+</span><span class='line'>  <span class="kt">uint32_t</span> <span class="n">msgpri</span> <span class="o">=</span> <span class="n">MSG_PRI_DEFAULT</span><span class="p">;</span>
+</span><span class='line'><span class="cp">#if INET6</span>
+</span><span class='line'>  <span class="kt">int</span> <span class="n">isipv6</span><span class="p">;</span>
+</span><span class='line'><span class="cp">#endif</span>
+</span><span class='line'>  <span class="n">TCPDEBUG0</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">inp</span> <span class="o">==</span> <span class="nb">NULL</span> <span class="o">||</span> <span class="n">inp</span><span class="o">-&gt;</span><span class="n">inp_state</span> <span class="o">==</span> <span class="n">INPCB_STATE_DEAD</span>
+</span><span class='line'><span class="cp">#if NECP</span>
+</span><span class='line'>    <span class="o">||</span> <span class="p">(</span><span class="n">necp_socket_should_use_flow_divert</span><span class="p">(</span><span class="n">inp</span><span class="p">))</span>
+</span><span class='line'><span class="cp">#endif </span><span class="cm">/* NECP */</span><span class="cp"></span>
+</span><span class='line'>    <span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cm">/*</span>
+</span><span class='line'><span class="cm">     * OOPS! we lost a race, the TCP session got reset after</span>
+</span><span class='line'><span class="cm">     * we checked SS_CANTSENDMORE, eg: while doing uiomove or a</span>
+</span><span class='line'><span class="cm">     * network interrupt in the non-splnet() section of sosend().</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">m</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span>
+</span><span class='line'>      <span class="n">m_freem</span><span class="p">(</span><span class="n">m</span><span class="p">);</span>
+</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">control</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>      <span class="n">m_freem</span><span class="p">(</span><span class="n">control</span><span class="p">);</span>
+</span><span class='line'>      <span class="n">control</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">inp</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span>
+</span><span class='line'>      <span class="n">error</span> <span class="o">=</span> <span class="n">ECONNRESET</span><span class="p">;</span>  <span class="cm">/* XXX EPIPE? */</span>
+</span><span class='line'>    <span class="k">else</span>
+</span><span class='line'>      <span class="n">error</span> <span class="o">=</span> <span class="n">EPROTOTYPE</span><span class="p">;</span>
+</span><span class='line'>    <span class="n">tp</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+</span><span class='line'>    <span class="n">TCPDEBUG1</span><span class="p">();</span>
+</span><span class='line'>    <span class="k">goto</span> <span class="n">out</span><span class="p">;</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'><span class="p">...</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I believe that comment explains everything we&rsquo;re seeing. If we trigger a <code>send</code>
+while the kernel is in the middle of tearing down the socket, it returns
+<code>EPROTOTYPE</code>. This then looks to be an error we could retry. Once the socket is
+fully torn down, it should eventually return the proper <code>EPIPE</code>. This is also
+pretty easy to test. So I modified the inner loop of our C test:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'>  <span class="k">while</span> <span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;before send</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">rc</span> <span class="o">=</span> <span class="n">send</span><span class="p">(</span><span class="n">client_fd</span><span class="p">,</span> <span class="n">buf</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">buf</span><span class="p">),</span> <span class="mi">0</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;after send: %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">rc</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">rc</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>      <span class="k">if</span> <span class="p">(</span><span class="n">errno</span> <span class="o">==</span> <span class="n">EPIPE</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">break</span><span class="p">;</span>
+</span><span class='line'>      <span class="p">}</span> <span class="k">else</span> <span class="k">if</span> <span class="p">(</span><span class="n">errno</span> <span class="o">==</span> <span class="n">EPROTOTYPE</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">continue</span><span class="p">;</span>
+</span><span class='line'>      <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">so_type</span><span class="p">;</span>
+</span><span class='line'>        <span class="kt">socklen_t</span> <span class="n">so_len</span> <span class="o">=</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">so_type</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">getsockopt</span><span class="p">(</span><span class="n">client_fd</span><span class="p">,</span> <span class="n">SOL_SOCKET</span><span class="p">,</span> <span class="n">SO_TYPE</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">so_type</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">so_len</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;type: %d %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">so_type</span><span class="p">,</span> <span class="n">SOCK_STREAM</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">perror</span><span class="p">(</span><span class="s">&quot;error send&quot;</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>      <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>  <span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And yep, it exits cleanly. After all of this, I think it&rsquo;s pretty clear at this
+point that there&rsquo;s no weird kernel corruption bug going on, just a poorly
+documented edge case. But it sure was fun chasing this condition through the
+system.</p>
+
+<p>To prevent anyone else from tripping over this edge case, I filed a Apple Radar
+ticket (number #19012087 for any Apple employees reading this). Hopefully if
+anyone runs into this mysterious <code>EPROTOTYPE</code> it&rsquo;ll be documented for them, or
+at least there&rsquo;s a chance they&rsquo;ll stumble over this blog post and save
+themselves a weekend diving through the OS.</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1699,6 +2883,10 @@ complete example.</p>
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/08/07/serde-0-dot-5-0-many-many-changes/">Serde 0.5.0 - Many Many Changes</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/05/18/serde-0-dot-4-0-now-supports-macros-in-stable-rust/">Serde 0.4.0 - Syntax Extensions in Stable Rust and More!</a>
       </li>
     
@@ -1712,10 +2900,6 @@ complete example.</p>
     
       <li class="post">
         <a href="/blog/2015/02/16/rewriting-rust-serialization-there-can-be-only-one-serde/">Rewriting Rust Serialization: Part 4: Serde2 Is Ready!</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/02/09/syntex-syntex-extensions-for-rust-1-dot-0/">Syntex: Syntax Extensions for Rust 1.0</a>
       </li>
     
   </ul>
