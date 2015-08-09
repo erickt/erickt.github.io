@@ -6,9 +6,17 @@ table {
 	margin-bottom: 1.5em;
 }
 
-.hentry table th, table td {
+.entry-content table th, table td {
 	padding-left: 5px;
 	padding-right: 5px;
+}
+
+.entry-content ul {
+	margin-left: 1.3em;
+}
+
+.entry-content h1 {
+	margin-bottom: 0.5em;
 }
 
 table th {
