@@ -13,11 +13,11 @@ breaking changes in the API. This has been done to better support serialization
 formats like [bincode](https://github.com/TyOverby/bincode), which relies on
 the `Serialize`e to hint to the `Serializer` how to parse the next bytes.
 This will enable [Servo](https://github.com/servo/servo/pull/6583) to use
-bincode for it's IPC protocol.
+bincode for its IPC protocol.
 
 Here are the major changes:
 
-* `serde::json` was factored out into it's own separate crate
+* `serde::json` was factored out into its own separate crate
   [serde\_json](https://crates.io/crates/serde_json)
 	[#114](https://github.com/serde-rs/serde/pull/114).
 * Added serialization and deserialization type hints.
@@ -58,7 +58,7 @@ so here are the latest numbers with these compilers:
 * go: version go1.4.2 darwin/amd64
 * clang: Apple LLVM version 6.1.0 (clang-602.0.53) (based on LLVM 3.6.0svn)
 
-[bincode](https://github.com/TyOverby/bincode)'s serde support makes it's first
+[bincode](https://github.com/TyOverby/bincode)'s serde support makes its first
 appearance, which starts out roughly 1/3 slower at serialization, but about the
 same speed at deserialization. I haven't done much optimization, so there's
 probably a lot of low hanging fruit.
