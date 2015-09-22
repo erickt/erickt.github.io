@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Rust | Chasing Rabbits]]></title>
   <link href="http://erickt.github.io/blog/categories/rust/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2015-08-09T09:53:01-07:00</updated>
+  <updated>2015-09-22T13:51:09-07:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -12,6 +12,192 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[If You Use Unsafe, You Should Be Using Compiletest]]></title>
+    <link href="http://erickt.github.io/blog/2015/09/22/if-you-use-unsafe/"/>
+    <updated>2015-09-22T10:58:25-07:00</updated>
+    <id>http://erickt.github.io/blog/2015/09/22/if-you-use-unsafe</id>
+    <content type="html"><![CDATA[<p>One of the coolest things about the Rust typesystem is that you can use it to
+make unsafe bindings safe. Read all about it in the
+<a href="https://doc.rust-lang.org/nightly/nomicon/">Rustonomicon</a>. However, it can be
+really quite easy to slip in a bug where you&rsquo;re not actually making the
+guarantees you think you&rsquo;re making. For example, here&rsquo;s a real bug I made in
+the <a href="https://github.com/erickt/rust-zmq">ZeroMQ FFI bindings</a> (which have been
+edited for clarity):</p>
+
+<pre><code class="rust">pub struct Socket {
+    sock: *mut libc::c_void,
+    closed: bool
+}
+
+impl Socket {
+    pub fn as_poll_item&lt;'a&gt;(&amp;self, events: i16) -&gt; PollItem&lt;'a&gt; { // &lt;- BUG!!!
+        PollItem {
+            socket: self.sock,
+            fd: 0,
+            events: events,
+            revents: 0,
+            marker: PhantomData
+        }
+    }
+}
+
+impl Drop for Socket {
+    fn drop(&amp;mut self) {
+        unsafe {
+            zmq_sys::zmq_close(self.sock);
+        }
+    }
+}
+
+pub struct PollItem&lt;'a&gt; {
+    socket: *mut libc::c_void,
+    fd: libc::c_int,
+    events: i16,
+    revents: i16,
+    marker: PhantomData&lt;&amp;'a Socket&gt;
+}
+
+pub fn poll(items: &amp;mut [PollItem], timeout: i64) -&gt; Result&lt;i32, Error&gt; {
+    unsafe {
+        let rc = zmq_sys::zmq_poll(
+            items.as_mut_ptr() as *mut zmq_sys::zmq_pollitem_t,
+            items.len() as c_int,
+            timeout as c_long);
+
+        if rc == -1i32 {
+            Err(errno_to_error())
+        } else {
+            Ok(rc as i32)
+        }
+    }
+}
+</code></pre>
+
+<p>Here&rsquo;s the bug if you missed my callout:</p>
+
+<pre><code class="rust">    pub fn as_poll_item&lt;'a&gt;(&amp;self, events: i16) -&gt; PollItem&lt;'a&gt; { // &lt;- BUG!!!
+</code></pre>
+
+<p>My intention was to tie the lifetime of <code>PollItem&lt;'a&gt;</code> to the lifetime of the
+<code>Socket</code>, but because I left out one measly <code>'a</code>, Rust doesn&rsquo;t tie the two
+together, and instead is actually using the <code>'static</code> lifetime. This then lets
+you do something evil like:</p>
+
+<pre><code>// leak the pointer!
+let poll_item = {
+        let context = zmq::Context::new();
+        let socket = context.socket(zmq::PAIR).unwrap();
+        socket.as_poll_item(0)
+};
+
+// And use the now uninitialized pointer! Wee! Party like it's C/C++!
+poll(&amp;[poll_item], 0).unwrap();
+</code></pre>
+
+<p>It&rsquo;s just that easy. Fix is simple, just change the function to use <code>&amp;'a self</code>
+and Rust will refuse to compile this snippet. Job well done!</p>
+
+<p>Well, no, not really. Because what was particularly devious about this bug is
+that it actually came back. Later on I accidentally reverted <code>&amp;'a self</code> back to
+<code>&amp;self</code> because I secretly hate myself. The project and examples still compiled
+and ran, but that unitialized dereference was just waiting around to cause a
+security vulnerability.</p>
+
+<p>Oops.</p>
+
+<p>Crap.</p>
+
+<p>Making sure Rust actually rejects programs that it ought to be rejecting
+<strong>fundamentally important</strong> when writing a library that uses Unsafe Rust.</p>
+
+<p>That&rsquo;s where <a href="https://github.com/laumann/compiletest-rs">compiletest</a> comes in.
+It&rsquo;s a testing framework that&rsquo;s been extacted from
+<a href="https://github.com/rust-lang/rust">rust-lang/rust</a>
+that lets you write these &ldquo;shouldn&rsquo;t-compile&rdquo; tests. Here&rsquo;s how to use it.
+First add this to your <code>Cargo.toml</code>. We do a little feature dance because
+currently <code>compiletest</code> only runs on nightly:</p>
+
+<pre><code class="toml">...
+[features]
+unstable = ["compiletest_rs"]
+...
+
+[dependencies]
+compiletest_rs = { "version = "*", optional = true }
+...
+</code></pre>
+
+<p>Then, add add a test driver <code>tests/compile-tests.rs</code> (or whatever you want to
+name it) that runs the compiletest tests:</p>
+
+<pre><code class="rust">#![cfg(feature = "unstable")]
+
+extern crate compiletest_rs as compiletest;
+
+use std::path::PathBuf;
+use std::env::var;
+
+fn run_mode(mode: &amp;'static str) {
+    let mut config = compiletest::default_config();
+
+    let cfg_mode = mode.parse().ok().expect("Invalid mode");
+
+    config.target_rustcflags = Some("-L target/debug/ -L target/debug/deps/".to_owned());
+    if let Ok(name) = var::&lt;&amp;str&gt;("TESTNAME") {
+        let s : String = name.to_owned();
+        config.filter = Some(s)
+    }
+    config.mode = cfg_mode;
+    config.src_base = PathBuf::from(format!("tests/{}", mode));
+
+    compiletest::run_tests(&amp;config);
+}
+
+#[test]
+fn compile_test() {
+    run_mode("compile-fail");
+}
+</code></pre>
+
+<p>Finally, add the test! Here&rsquo;s the one I wrote, <code>tests/compile-fail/no-leaking-poll-items.rs</code>:</p>
+
+<pre><code class="rust">extern crate zmq;
+
+fn main() {
+    let mut context = zmq::Context::new();
+    let _poll_item = {
+        let socket = context.socket(zmq::PAIR).unwrap();
+        socket.as_poll_item(0) //~ ERROR error: `socket` does not live long enough
+    };
+}
+</code></pre>
+
+<p>Now you can live in peace with the confidence that this bug won&rsquo;t ever appear again:</p>
+
+<pre><code>% multirust run nightly cargo test --features unstable
+     Running target/debug/compile_tests-335c5f56b353961f
+
+running 1 test
+
+running 1 test
+test [compile-fail] compile-fail/no-leaking-poll-items.rs ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
+
+test compile_test ... ok
+</code></pre>
+
+<p>In summary, use <code>compiletest</code>, and demand it&rsquo;s use from the Unsafe Rust
+libraries you use! Otherwise you can never be sure if unsafe and undefined
+behavior like this will sneak into your project.</p>
+
+<p>TLDR:</p>
+
+<p><img class="center <a" src="href="http://i.imgur.com/WPaJDrB.jpg">http://i.imgur.com/WPaJDrB.jpg</a>&#8221; title=&#8221;Bad Time&#8221; ></p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Serde 0.5.0 - Many Many Changes]]></title>
@@ -694,849 +880,6 @@ deserialize from a Rust type.</p></li>
 
 
 <p>Thanks everyone that&rsquo;s helped out with this release!</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Rewriting Rust Serialization: Part 4: Serde2 Is Ready!]]></title>
-    <link href="http://erickt.github.io/blog/2015/02/16/rewriting-rust-serialization-there-can-be-only-one-serde/"/>
-    <updated>2015-02-16T07:32:54-08:00</updated>
-    <id>http://erickt.github.io/blog/2015/02/16/rewriting-rust-serialization-there-can-be-only-one-serde</id>
-    <content type="html"><![CDATA[<p>It&rsquo;s been a while, hasn&rsquo;t it? Here&rsquo;s
-<a href="http://erickt.github.io/blog/2014/10/28/serialization/">part 1</a>,
-<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2</a>,
-<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2.1</a>,
-<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2.2</a>,
-<a href="http://erickt.github.io/blog/2014/12/13/rewriting-rust-serialization/">part 3</a>, and
-<a href="http://erickt.github.io/blog/2014/12/13/performance-digression/">part 3.1</a>
-if you want to catch up.</p>
-
-<h2>Serde Version 2</h2>
-
-<p>Well it&rsquo;s a long time coming, but serde2 is finally in a mostly usable
-position! If you recall from
-<a href="http://erickt.github.io/blog/2014/12/13/rewriting-rust-serialization/">part 3</a>,
-one of the problems with serde1 is that we&rsquo;re paying a lot for tagging our
-types, and it&rsquo;s really hurting us on the deserialization side of things. So
-there&rsquo;s one other pattern that we can use that allows for lookahead that
-doesn&rsquo;t need tags: visitors. A year or so ago I rewrote our generic hashing
-framework to use the visitor pattern to great success. <code>serde2</code> came out of
-experiments to see if I could do the same thing here. It turned out that it was
-a really elegant approach.</p>
-
-<h3>Serialize</h3>
-
-<p>It all starts with a type that we want to serialize:</p>
-
-<pre><code class="rust">pub trait Serialize {
-    fn visit&lt;
-        V: Visitor,
-    &gt;(&amp;self, visitor: &amp;mut V) -&gt; Result&lt;V::Value, V::Error&gt;;
-}
-</code></pre>
-
-<p>(Aside: while I&rsquo;d rather use <code>where</code> here for this type parameter, that would
-force me to write <code>&lt;V as Visitor&gt;::Value&gt;</code> due to
-<a href="https://github.com/rust-lang/rust/issues/20300">#20300</a>).</p>
-
-<p>This <code>Visitor</code> trait then looks like:</p>
-
-<pre><code class="rust">pub trait Visitor {
-    type Value;
-    type Error;
-
-    fn visit_unit(&amp;mut self) -&gt; Result&lt;Self::Value, Self::Error&gt;;
-
-    #[inline]
-    fn visit_named_unit(&amp;mut self, _name: &amp;str) -&gt; Result&lt;Self::Value, Self::Error&gt; {
-        self.visit_unit()
-    }
-
-
-    fn visit_bool(&amp;mut self, v: bool) -&gt; Result&lt;Self::Value, Self::Error&gt;;
-
-    ...
-}
-</code></pre>
-
-<p>So the implementation for a <code>bool</code> then looks like:</p>
-
-<pre><code class="rust">impl Serialize for bool {
-    #[inline]
-    fn visit&lt;
-        V: Visitor,
-    &gt;(&amp;self, visitor: &amp;mut V) -&gt; Result&lt;V::Value, V::Error&gt; {
-        visitor.visit_bool(*self)
-    }
-}
-</code></pre>
-
-<p>Things get more interesting when we get to compound structures like a sequence.
-Here&rsquo;s <code>Visitor</code> again. It needs to both be able to visit the overall structure
-as well as each item:</p>
-
-<pre><code class="rust">    ...
-
-    fn visit_seq&lt;V&gt;(&amp;mut self, visitor: V) -&gt; Result&lt;Self::Value, Self::Error&gt;
-        where V: SeqVisitor;
-
-    fn visit_seq_elt&lt;T&gt;(&amp;mut self,
-                        first: bool,
-                        value: T) -&gt; Result&lt;Self::Value, Self::Error&gt;
-        where T: Serialize;
-
-    ...
-}
-</code></pre>
-
-<p>We also have this <code>SeqVisitor</code> trait that the type to serialize provides. It
-really just looks like an <code>Iterator</code>, but the type parameter has been moved to
-the <code>visit</code> method so that it can return different types:</p>
-
-<pre><code class="rust">pub trait SeqVisitor {
-    fn visit&lt;
-        V: Visitor,
-    &gt;(&amp;mut self, visitor: &amp;mut V) -&gt; Result&lt;Option&lt;V::Value&gt;, V::Error&gt;;
-
-    #[inline]
-    fn size_hint(&amp;self) -&gt; (usize, Option&lt;usize&gt;) {
-        (0, None)
-    }
-}
-</code></pre>
-
-<p>Finally, to implement this for a type like <code>&amp;[T]</code> we create an
-<code>Iterator</code>-to-<code>SeqVisitor</code> adaptor and pass it to the visitor, which then in
-turn visits each item:</p>
-
-<pre><code class="rust">pub struct SeqIteratorVisitor&lt;Iter&gt; {
-    iter: Iter,
-    first: bool,
-}
-
-impl&lt;T, Iter: Iterator&lt;Item=T&gt;&gt; SeqIteratorVisitor&lt;Iter&gt; {
-    #[inline]
-    pub fn new(iter: Iter) -&gt; SeqIteratorVisitor&lt;Iter&gt; {
-        SeqIteratorVisitor {
-            iter: iter,
-            first: true,
-        }
-    }
-}
-
-impl&lt;
-    T: Serialize,
-    Iter: Iterator&lt;Item=T&gt;,
-&gt; SeqVisitor for SeqIteratorVisitor&lt;Iter&gt; {
-    #[inline]
-    fn visit&lt;
-        V: Visitor,
-    &gt;(&amp;mut self, visitor: &amp;mut V) -&gt; Result&lt;Option&lt;V::Value&gt;, V::Error&gt; {
-        let first = self.first;
-        self.first = false;
-
-        match self.iter.next() {
-            Some(value) =&gt; {
-                let value = try!(visitor.visit_seq_elt(first, value));
-                Ok(Some(value))
-            }
-            None =&gt; Ok(None),
-        }
-    }
-
-    #[inline]
-    fn size_hint(&amp;self) -&gt; (usize, Option&lt;usize&gt;) {
-        self.iter.size_hint()
-    }
-}
-
-impl&lt;
-    'a,
-    T: Serialize,
-&gt; Serialize for &amp;'a [T] {
-    #[inline]
-    fn visit&lt;
-        V: Visitor,
-    &gt;(&amp;self, visitor: &amp;mut V) -&gt; Result&lt;V::Value, V::Error&gt; {
-        visitor.visit_seq(SeqIteratorVisitor::new(self.iter()))
-    }
-}
-</code></pre>
-
-<p><code>SeqIteratorVisitor</code> is publically exposed, so it should be easy to use it with
-custom data structures. Maps follow the same pattern (and also expose
-<code>MapIteratorVisitor</code>), but each item instead uses <code>visit_visit_map_elt(first,
-key, value)</code>.  Tuples, struct tuples, and tuple enum variants are all really
-just named sequences. Likewise, structs and struct enum variants are just named
-maps.</p>
-
-<p>Because struct implementations are so common, here&rsquo;s an example how to do it:</p>
-
-<pre><code class="rust">struct Point {
-    x: i32,
-    y: i32,
-}
-
-struct PointVisitor&lt;'a&gt; {
-    state: u32,
-    value: &amp;'a Point,
-}
-
-impl&lt;'a&gt; MapVisitor for PointVisitor&lt;'a&gt; {
-    fn visit&lt;
-        V: Visitor,
-    &gt;(&amp;mut self, visitor: &amp;mut V) -&gt; Result&lt;V::Value, V::Error&gt; {
-        match self.state {
-            0 =&gt; {
-                self.state += 1;
-                Ok(Some(try!(visitor.visit_map_elt(true, "x", &amp;self.x))))
-            }
-            1 =&gt; {
-                self.state += 1;
-                Ok(Some(try!(visitor.visit_map_elt(true, "y", &amp;self.y))))
-            }
-            _ =&gt; Ok(None),
-        }
-    }
-}
-
-impl Serialize for Point {
-    fn visit&lt;
-        V: Visitor,
-    &gt;(&amp;self, visitor: &amp;mut V) -&gt; Result&lt;V::Value, V::Error&gt; {
-        visit_named_map("Point", PointVisitor {
-            state: 0,
-            value: self,
-        })
-    }
-}
-</code></pre>
-
-<p>Fortunately <code>serde2</code> also comes with a <code>#[derive_serialize]</code> macro so you don&rsquo;t
-need to write this out by hand if you don&rsquo;t want to.</p>
-
-<h3>Serializer</h3>
-
-<p>Now to actually build a serializer. We start with a trait:</p>
-
-<pre><code class="rust">pub trait Serializer {
-    type Value;
-    type Error;
-
-    fn visit&lt;T&gt;(&amp;mut self, value: &amp;T) -&gt; Result&lt;Self::Value, Self::Error&gt;
-        where T: Serialize;
-}
-</code></pre>
-
-<p>It&rsquo;s the responsibility of the serializer to create a visitor and then pass it
-to the type. Oftentimes the serializer also implements <code>Visitor</code>, but it&rsquo;s not
-required. Here&rsquo;s a snippet of the JSON serializer visitor:</p>
-
-<pre><code class="rust">struct Visitor&lt;'a, W: 'a&gt; {
-    writer: &amp;'a mut W,
-}
-
-impl&lt;'a, W: Writer&gt; Visitor for Visitor&lt;'a, W&gt; {
-    type Value = ();
-    type Error = io::Error;
-
-    fn visit_unit(&amp;mut self) -&gt; IoResult&lt;()&gt; {
-        self.writer.write_all(b"null")
-    }
-
-    #[inline]
-    fn visit_bool(&amp;mut self, value: bool) -&gt; IoResult&lt;()&gt; {
-        if value {
-            self.writer.write_all(b"true")
-        } else {
-            self.writer.write_all(b"false")
-        }
-    }
-
-    #[inline]
-    fn visit_isize(&amp;mut self, value: isize) -&gt; IoResult&lt;()&gt; {
-        write!(self.writer, "{}", value)
-    }
-
-    ...
-
-    #[inline]
-    fn visit_map&lt;V&gt;(&amp;mut self, mut visitor: V) -&gt; IoResult&lt;()&gt;
-        where V: ser::MapVisitor,
-    {
-        try!(self.writer.write_all(b"{"));
-
-        while let Some(()) = try!(visitor.visit(self)) { }
-
-        self.writer.write_all(b"}")
-    }
-
-    #[inline]
-    fn visit_map_elt&lt;K, V&gt;(&amp;mut self, first: bool, key: K, value: V) -&gt; IoResult&lt;()&gt;
-        where K: ser::Serialize,
-              V: ser::Serialize,
-    {
-        if !first {
-            try!(self.writer.write_all(b","));
-        }
-
-        try!(key.visit(self));
-        try!(self.writer.write_all(b":"));
-        value.visit(self)
-    }
-}
-</code></pre>
-
-<p>Hopefully it is pretty straight forward.</p>
-
-<h2>Deserialization</h2>
-
-<p>Now serialization is the easy part. Deserialization is where it always gets
-more tricky. We follow a similar pattern as serialization. A deserializee
-creates a visitor which accepts any type (most resulting in an error), and
-passes it to a deserializer. This deserializer then extracts it&rsquo;s next value
-from it&rsquo;s stream and passes it to the visitor, which then produces the actual
-type.</p>
-
-<p>It&rsquo;s achingly close to the same pattern between a serializer and a serializee,
-but as hard as I tried, I couldn&rsquo;t unify the two. The error semantics are
-different. In serialization, you want the serializer (which creates the
-visitor) to define the error. In deserialization, you want the deserializer
-which consumes the visitor to define the error.</p>
-
-<p>Let&rsquo;s start first with <code>Error</code>. As opposed to serialization, when we&rsquo;re
-deserializing we can error both in the <code>Deserializer</code> if there is a parse
-error, or in the <code>Deserialize</code> if it&rsquo;s received an unexpected value. We do this
-with an <code>Error</code> trait, which allows a deserializee to generically create the
-few errors it needs:</p>
-
-<pre><code class="rust">pub trait Error {
-    fn syntax_error() -&gt; Self;
-
-    fn end_of_stream_error() -&gt; Self;
-
-    fn missing_field_error(&amp;'static str) -&gt; Self;
-}
-</code></pre>
-
-<p>Now the <code>Deserialize</code> trait, which looks similar to <code>Serialize</code>:</p>
-
-<pre><code class="rust">pub trait Deserialize {
-    fn deserialize&lt;
-        D: Deserializer,
-    &gt;(deserializer: &amp;mut D) -&gt; Result&lt;Self, D::Error&gt;;
-}
-</code></pre>
-
-<p>The <code>Visitor</code> also looks like the serialization <code>Visitor</code>, except for the
-methods error by default.</p>
-
-<pre><code class="rust">pub trait Visitor {
-    type Value;
-
-    fn visit_bool&lt;
-        E: Error,
-    &gt;(&amp;mut self, _v: bool) -&gt; Result&lt;Self::Value, E&gt; {
-        Err(Error::syntax_error())
-    }
-
-    fn visit_isize&lt;
-        E: Error,
-    &gt;(&amp;mut self, v: isize) -&gt; Result&lt;Self::Value, E&gt; {
-        self.visit_i64(v as i64)
-    }
-
-    ...
-}
-</code></pre>
-
-<p>Sequences and Maps are also a little different:</p>
-
-<pre><code class="rust">pub trait Visitor {
-    ...
-
-    fn visit_seq&lt;
-        V: SeqVisitor,
-    &gt;(&amp;mut self, _visitor: V) -&gt; Result&lt;Self::Value, V::Error&gt; {
-        Err(Error::syntax_error())
-    }
-
-    fn visit_map&lt;
-        V: MapVisitor,
-    &gt;(&amp;mut self, _visitor: V) -&gt; Result&lt;Self::Value, V::Error&gt; {
-        Err(Error::syntax_error())
-    }
-
-    ...
-}
-
-pub trait SeqVisitor {
-    type Error: Error;
-
-    fn visit&lt;
-        T: Deserialize,
-    &gt;(&amp;mut self) -&gt; Result&lt;Option&lt;T&gt;, Self::Error&gt;;
-
-    fn end(&amp;mut self) -&gt; Result&lt;(), Self::Error&gt;;
-
-    #[inline]
-    fn size_hint(&amp;self) -&gt; (usize, Option&lt;usize&gt;) {
-        (0, None)
-    }
-}
-
-pub trait MapVisitor {
-    type Error: Error;
-
-    #[inline]
-    fn visit&lt;
-        K: Deserialize,
-        V: Deserialize,
-    &gt;(&amp;mut self) -&gt; Result&lt;Option&lt;(K, V)&gt;, Self::Error&gt; {
-        match try!(self.visit_key()) {
-            Some(key) =&gt; {
-                let value = try!(self.visit_value());
-                Ok(Some((key, value)))
-            }
-            None =&gt; Ok(None)
-        }
-    }
-
-    fn visit_key&lt;
-        K: Deserialize,
-    &gt;(&amp;mut self) -&gt; Result&lt;Option&lt;K&gt;, Self::Error&gt;;
-
-    fn visit_value&lt;
-        V: Deserialize,
-    &gt;(&amp;mut self) -&gt; Result&lt;V, Self::Error&gt;;
-
-    fn end(&amp;mut self) -&gt; Result&lt;(), Self::Error&gt;;
-
-    #[inline]
-    fn size_hint(&amp;self) -&gt; (usize, Option&lt;usize&gt;) {
-        (0, None)
-    }
-}
-</code></pre>
-
-<p>Here is an example struct deserializer. Structs are deserialized as a map, but
-since maps are unordered, we need a simple state machine to extract the values.
-In order to get the keys, we just create an enum for the fields, and a custom
-deserializer to convert a string into a field without an allocation:</p>
-
-<pre><code class="rust">struct Point {
-    x: i32,
-    y: i32,
-}
-
-impl Deserialize for Point {
-    fn deserialize&lt;
-        D: Deserializer,
-    &gt;(deserializer: &amp;mut D) -&gt; Result&lt;Point, D::Error&gt; {
-        enum Field {
-            x,
-            y,
-        }
-
-        struct FieldVisitor;
-
-        impl Visitor for FieldVisitor {
-            type Value = Field;
-
-            fn visit_str&lt;
-                E: Error,
-            &gt;(&amp;mut self, value: &amp;str) -&gt; Result&lt;Field, E&gt; {
-                match value {
-                    "x" =&gt; Ok(Field::x),
-                    "y" =&gt; Ok(Field::y),
-                    _ =&gt; Err(Error::syntax_error()),
-                }
-            }
-        }
-
-        impl Deserialize for Field {
-            fn deserialize&lt;
-                D: Deserializer,
-            &gt;(state: &amp;mut D) -&gt; Result&lt;Field, D::Error&gt; {
-                state.visit(&amp;mut FieldVisitor)
-            }
-        }
-
-        struct Visitor;
-
-        impl Visitor for Visitor {
-            type Value = Point;
-
-            fn visit_map&lt;
-                V: MapVisitor,
-            &gt;(&amp;mut self, mut visitor: V) -&gt; Result&lt;Point, V::Error&gt; {
-                {
-                    let mut x = None;
-                    let mut y = None;
-
-                    while let Some(key) = try!(visitor.visit_key()) {
-                        match key {
-                            Field::x =&gt; {
-                                x = Some(try!(visitor.visit_value()));
-                            }
-                            Field::y =&gt; {
-                                y = Some(try!(visitor.visit_value()));
-                            }
-                        }
-                    }
-
-                    let x = match x {
-                        Some(x) =&gt; x,
-                        None =&gt; {
-                            return Err(Error::missing_field_error("x"));
-                        }
-                    };
-                    let y = match y {
-                        Some(y) =&gt; y,
-                        None =&gt; {
-                            return Err(Error::missing_field_error("y"));
-                        }
-                    };
-
-                    Ok(Point {
-                        x: x,
-                        y: y,
-                    })
-                }
-            }
-
-            fn visit_named_map&lt;
-                V: MapVisitor,
-            &gt;(&amp;mut self, name: &amp;str, visitor: V) -&gt; Result&lt;Point, V::Error&gt; {
-                if name == "Point" {
-                    self.visit_map(visitor)
-                } else {
-                    Err(Error::syntax_error())
-                }
-            }
-        }
-
-        deserializer.visit(&amp;mut Visitor)
-    }
-}
-</code></pre>
-
-<p>It&rsquo;s a little more complicated, but once again there is
-<code>#[derive_deserialize]</code>, which does all this work for you.</p>
-
-<h3>Deserializer</h3>
-
-<p>Deserializers then follow the same pattern as serializers. The one difference
-is that we need to provide a special hook for <code>Option&lt;T&gt;</code> types so formats like
-JSON can treat <code>null</code> types as options.</p>
-
-<pre><code class="rust">pub trait Deserializer {
-    type Error: Error;
-
-    fn visit&lt;
-        V: Visitor,
-    &gt;(&amp;mut self, visitor: &amp;mut V) -&gt; Result&lt;V::Value, Self::Error&gt;;
-
-    /// The `visit_option` method allows a `Deserialize` type to inform the
-    /// `Deserializer` that it's expecting an optional value. This allows
-    /// deserializers that encode an optional value as a nullable value to
-    /// convert the null value into a `None`, and a regular value as
-    /// `Some(value)`.
-    #[inline]
-    fn visit_option&lt;
-        V: Visitor,
-    &gt;(&amp;mut self, visitor: &amp;mut V) -&gt; Result&lt;V::Value, Self::Error&gt; {
-        self.visit(visitor)
-    }
-}
-</code></pre>
-
-<h2>Performance</h2>
-
-<p>So how does it perform? Here&rsquo;s the serialization benchmarks, with yet another
-ordering. This time sorted by the performance:</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library                   </th>
-<th> format                 </th>
-<th> serialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust            </td>
-<td> Cap&#8217;n Proto (unpacked) </td>
-<td> 4226                 </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto              </td>
-<td> Cap&#8217;n Proto            </td>
-<td> 3824.20              </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> bincode                   </td>
-<td> Binary                 </td>
-<td> 1020                 </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust            </td>
-<td> Cap&#8217;n Proto (packed)   </td>
-<td> 672                  </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> gogoprotobuf              </td>
-<td> Protocol Buffers       </td>
-<td> 596.78               </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> rust-msgpack              </td>
-<td> MessagePack            </td>
-<td> 397                  </td>
-</tr>
-<tr>
-<td> <strong>Rust</strong> </td>
-<td> <strong>serde2::json</strong> (&amp;[u8])  </td>
-<td> <strong>JSON</strong>               </td>
-<td> <strong>373</strong>              </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> rust-protobuf             </td>
-<td> Protocol Buffers       </td>
-<td> 357                  </td>
-</tr>
-<tr>
-<td> C++      </td>
-<td> rapidjson                 </td>
-<td> JSON                   </td>
-<td> 316                  </td>
-</tr>
-<tr>
-<td> <strong>Rust</strong> </td>
-<td> <strong>serde2::json</strong> (Custom) </td>
-<td> <strong>JSON</strong>               </td>
-<td> <strong>306</strong>              </td>
-</tr>
-<tr>
-<td> <strong>Rust</strong> </td>
-<td> <strong>serde2::json</strong> (Vec)    </td>
-<td> <strong>JSON</strong>               </td>
-<td> <strong>288</strong>              </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> serde::json (Custom)      </td>
-<td> JSON                   </td>
-<td> 244                  </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> serde::json (&amp;[u8])       </td>
-<td> JSON                   </td>
-<td> 222                  </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> goprotobuf                </td>
-<td> Protocol Buffers       </td>
-<td> 214.68               </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> serde::json (Vec)         </td>
-<td> JSON                   </td>
-<td> 149                  </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> ffjson                    </td>
-<td> JSON                   </td>
-<td> 147.37               </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> serialize::json           </td>
-<td> JSON                   </td>
-<td> 183                  </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> encoding/json             </td>
-<td> JSON                   </td>
-<td> 80.49                </td>
-</tr>
-</tbody>
-</table>
-
-
-<p>I think it&rsquo;s fair to say that on at least this benchmark we&rsquo;ve hit our
-performance numbers. Writing to a preallocated buffer with <code>BufWriter</code> is 18%
-<em>faster</em> than <a href="https://github.com/miloyip/rapidjson">rapidjson</a> (although to be
-fair they are allocating). Our <code>Vec&lt;u8&gt;</code> writer comes in 12% slower. What&rsquo;s
-interesting is this custom Writer. It turns out LLVM is still having trouble
-lowering our generic <code>Vec::push_all</code> into a <code>memcpy</code>. This Writer variant
-however is able to get us to rapidjson&rsquo;s level:</p>
-
-<pre><code class="rust">fn push_all_bytes(dst: &amp;mut Vec&lt;u8&gt;, src: &amp;[u8]) {
-    let dst_len = dst.len();
-    let src_len = src.len();
-
-    dst.reserve(src_len);
-
-    unsafe {
-        // we would have failed if `reserve` overflowed.
-        dst.set_len(dst_len + src_len);
-
-        ::std::ptr::copy_nonoverlapping_memory(
-            dst.as_mut_ptr().offset(dst_len as isize),
-            src.as_ptr(),
-            src_len);
-    }
-}
-
-struct MyMemWriter1 {
-    buf: Vec&lt;u8&gt;,
-}
-
-impl Writer for MyMemWriter1 {
-    #[inline]
-    fn write_all(&amp;mut self, buf: &amp;[u8]) -&gt; IoResult&lt;()&gt; {
-        push_all_bytes(&amp;mut self.buf, buf);
-        Ok(())
-    }
-}
-</code></pre>
-
-<p>Deserialization we do much better than serde because we aren&rsquo;t passing around
-all those tags, but we have a ways to catch up to rapidjson. Still, being just 37%
-slower than the fastest JSON deserializer makes me feel pretty proud.</p>
-
-<table>
-<thead>
-<tr>
-<th> language </th>
-<th> library          </th>
-<th> format                  </th>
-<th> deserialization (MB/s) </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust   </td>
-<td> Cap&#8217;n Proto (unpacked)  </td>
-<td> 2123                   </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto     </td>
-<td> Cap&#8217;n Proto (zero copy) </td>
-<td> 1407.95                </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> go-capnproto     </td>
-<td> Cap&#8217;n Proto             </td>
-<td> 711.77                 </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> capnproto-rust   </td>
-<td> Cap&#8217;n Proto (packed)    </td>
-<td> 529                    </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> gogoprotobuf     </td>
-<td> Protocol Buffers        </td>
-<td> 272.68                 </td>
-</tr>
-<tr>
-<td> C++      </td>
-<td> rapidjson        </td>
-<td> JSON (sax)              </td>
-<td> 189                    </td>
-</tr>
-<tr>
-<td> C++      </td>
-<td> rapidjson        </td>
-<td> JSON (dom)              </td>
-<td> 162                    </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> bincode          </td>
-<td> Binary                  </td>
-<td> 142                    </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> rust-protobuf    </td>
-<td> Protocol Buffers        </td>
-<td> 141                    </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> rust-msgpack     </td>
-<td> MessagePack             </td>
-<td> 138                    </td>
-</tr>
-<tr>
-<td> <strong>Rust</strong> </td>
-<td> <strong>serde2::json</strong> </td>
-<td> <strong>JSON</strong>                </td>
-<td> <strong>122</strong>                </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> ffjson           </td>
-<td> JSON                    </td>
-<td> 95.06                  </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> goprotobuf       </td>
-<td> Protocol Buffers        </td>
-<td> 79.78                  </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> serde::json      </td>
-<td> JSON                    </td>
-<td> 67                     </td>
-</tr>
-<tr>
-<td> Rust     </td>
-<td> serialize::json  </td>
-<td> JSON                    </td>
-<td> 25                     </td>
-</tr>
-<tr>
-<td> Go       </td>
-<td> encoding/json    </td>
-<td> JSON                    </td>
-<td> 22.79                  </td>
-</tr>
-</tbody>
-</table>
-
-
-<h2>Conclusion</h2>
-
-<p>What a long trip it&rsquo;s been! I hope you enjoyed it. While there are still
-a few things left to port over from serde1 to serde2 (like the JSON pretty
-printer), and some things probably should be renamed, I&rsquo;m happy with the design
-so I think it&rsquo;s in a place where people can start using it now. Please let me
-know how it goes!</p>
 ]]></content>
   </entry>
   
