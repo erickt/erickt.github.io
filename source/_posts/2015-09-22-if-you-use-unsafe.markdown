@@ -191,4 +191,4 @@ behavior like this will sneak into your project.
 
 TLDR:
 
-{% img center http://i.imgur.com/WPaJDrB.jpg Bad Time %}
+{% img center /images/compiletest-badtime.jpg Bad Time %}
