@@ -4,7 +4,7 @@
   <title><![CDATA[Chasing Rabbits]]></title>
   <link href="http://erickt.github.io/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2015-11-24T14:06:24-08:00</updated>
+  <updated>2016-01-27T11:59:27-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -12,6 +12,442 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Stateful: A Rust Experimental Syntax Extension for Generators and More]]></title>
+    <link href="http://erickt.github.io/blog/2016/01/27/stateful-in-progress-generators/"/>
+    <updated>2016-01-27T08:31:27-08:00</updated>
+    <id>http://erickt.github.io/blog/2016/01/27/stateful-in-progress-generators</id>
+    <content type="html"><![CDATA[<p>AKA: Erick Does More Horrible Things to Rust</p>
+
+<p>Hello internet! It&rsquo;s been too long. Not only are the
+<a href="http://www.meetup.com/rust-bay-area">Rust Meetups</a> back up and running, it&rsquo;s
+time for me to start back to blogging. For the past couple months, I&rsquo;ve been
+working on a new syntax extension that will allow people to create fun and
+exciting new control flow mechanisms in stable Rust.  &ldquo;For the love of all that
+is sigils, why?!&rdquo;  Well, Because I can.  Sometimes when you stare into the
+madness, it stares back into you? Or something like that?</p>
+
+<p>It&rsquo;s called <a href="https://github.com/erickt/stateful">Stateful</a>, which helpfully has
+no documentation. Such an innocent name, right?  It&rsquo;s very much in progress
+(and mostly broken) implementation of some of the ideas in this and future
+posts.  So don&rsquo;t go and think these code snippets are executable just yet :)</p>
+
+<p>Anyway, lets show off <code>Stateful</code> by showing how we can implement
+<a href="https://en.wikipedia.org/wiki/Generator_%28computer_programming%29">Generators</a>.
+We&rsquo;ve got an <a href="https://github.com/rust-lang/rfcs/issues/388">RFC ticket</a> to
+implement them, but wouldn&rsquo;t it be nice to have them sooner?  For those of you
+unfamiliar with the concept, Generators are function that can be returned from
+multiple times, all while preserving state between those calls.  Basically,
+they&rsquo;re just a simpler way to write
+<a href="https://doc.rust-lang.org/std/iter/#iterator">Iterators</a>.</p>
+
+<p>Say we wanted to iterate over the numbers 0, 1, and 2.  Today, we would write
+an <code>Iterator</code> with something like this:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">struct</span> <span class="n">Iter3</span><span class="p">(</span><span class="n">usize</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span> <span class="n">Iter3</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">new</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Self</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">Iter3</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span> <span class="nb">Iterator</span> <span class="k">for</span> <span class="n">Iter3</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">next</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Option</span><span class="o">&lt;</span><span class="n">usize</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="bp">self</span><span class="p">.</span><span class="mi">0</span> <span class="o">&lt;</span> <span class="mi">3</span> <span class="p">{</span>
+</span><span class='line'>            <span class="kd">let</span> <span class="n">i</span> <span class="o">=</span> <span class="bp">self</span><span class="p">.</span><span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>            <span class="bp">self</span><span class="p">.</span><span class="mi">0</span> <span class="o">+=</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>            <span class="nb">Some</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+</span><span class='line'>        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nb">None</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">fn</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">iter</span> <span class="o">=</span> <span class="n">Iter3</span><span class="o">::</span><span class="n">new</span><span class="p">();</span>
+</span><span class='line'>    <span class="n">assert_eq</span><span class="o">!</span><span class="p">(</span><span class="n">iter</span><span class="p">.</span><span class="n">next</span><span class="p">(),</span> <span class="nb">Some</span><span class="p">(</span><span class="mi">0</span><span class="p">));</span>
+</span><span class='line'>    <span class="n">assert_eq</span><span class="o">!</span><span class="p">(</span><span class="n">iter</span><span class="p">.</span><span class="n">next</span><span class="p">(),</span> <span class="nb">Some</span><span class="p">(</span><span class="mi">1</span><span class="p">));</span>
+</span><span class='line'>    <span class="n">assert_eq</span><span class="o">!</span><span class="p">(</span><span class="n">iter</span><span class="p">.</span><span class="n">next</span><span class="p">(),</span> <span class="nb">Some</span><span class="p">(</span><span class="mi">2</span><span class="p">));</span>
+</span><span class='line'>    <span class="n">assert_eq</span><span class="o">!</span><span class="p">(</span><span class="n">iter</span><span class="p">.</span><span class="n">next</span><span class="p">(),</span> <span class="nb">None</span><span class="p">);</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The struct preserves our state across these function calls.  It&rsquo;s a pretty
+straightforward implementation, but it does have some amount of boilerplate
+code. For large iterator implementations, this state management can get quite
+complicated.  Instead, lets see how this same code could be expressed with
+something like <code>Stateful</code>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="err">#</span><span class="o">!</span><span class="p">[</span><span class="n">plugin</span><span class="p">(</span><span class="n">stateful</span><span class="p">)]</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#[generator]</span>
+</span><span class='line'><span class="k">fn</span> <span class="n">gen3</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="n">Item</span><span class="o">=</span><span class="n">usize</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="k">mut</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>    <span class="k">while</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="mi">3</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">yield_</span><span class="o">!</span><span class="p">(</span><span class="n">i</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Where <code>yield_!(i)</code> is some magical control flow mechanism that not only
+returned some value <code>Some(i)</code>, but also made sure on the <code>iter.next()</code> would
+jump the execution to just after the yield.  At the end of the generator, we&rsquo;d
+just return <code>None</code>.  We could simplify this even more by unrolling that loop
+into:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="cp">#[generator]</span>
+</span><span class='line'><span class="k">fn</span> <span class="n">gen3_unrolled</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">Iterator</span><span class="o">&lt;</span><span class="n">Item</span><span class="o">=</span><span class="n">usize</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">yield_</span><span class="o">!</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">yield_</span><span class="o">!</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">yield_</span><span class="o">!</span><span class="p">(</span><span class="mi">2</span><span class="p">);</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The fun part is figuring out how to convert these generators into something
+that&rsquo;s roughly equivalent to <code>Iter3</code>.  At it&rsquo;s heart, <code>Iter3</code> really is a
+simple state machine, where we save the counter state in the structure before
+we &ldquo;yield&rdquo; the value to the caller.  Let&rsquo;s look at what we would generate for
+<code>gen3_unrolled</code>.</p>
+
+<p>First, we need some boilerplate, that sets up the state of our generator.  We
+don&rsquo;t yet have <a href="https://aturon.github.io/blog/2015/09/28/impl-trait/">impl
+trait</a>, so we hide all
+our stuff in a module:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">fn</span> <span class="n">gen_unrolled</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">gen_unrolled</span><span class="o">::</span><span class="n">Generator</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">gen_unrolled</span><span class="o">::</span><span class="n">Generator</span><span class="o">::</span><span class="n">new</span><span class="p">()</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kn">mod</span> <span class="n">gen3_unrolled</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">pub</span> <span class="k">struct</span> <span class="n">Generator</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">state</span><span class="o">:</span> <span class="n">State</span><span class="p">,</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">impl</span> <span class="n">Generator</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">pub</span> <span class="k">fn</span> <span class="n">new</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Self</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">Generator</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">state</span><span class="o">:</span> <span class="n">State</span><span class="o">::</span><span class="n">Enter</span><span class="p">,</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="p">...</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>We represent our generator&rsquo;s state with an enum.  We have our initial state, a
+state per yield, then an exit state:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">enum</span> <span class="n">State</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">Enter</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">AfterYield0</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">AfterYield1</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">AfterYield2</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">Exit</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Finally, we have our state machine, and a pretty trivial <code>Iterator</code>
+implementation that manages entering and exiting the state machine:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">impl</span> <span class="nb">Iterator</span> <span class="k">for</span> <span class="n">Generator</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">type</span> <span class="n">Item</span> <span class="o">=</span> <span class="n">usize</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">next</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Option</span><span class="o">&lt;</span><span class="n">usize</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">state</span> <span class="o">=</span> <span class="n">mem</span><span class="o">::</span><span class="n">replace</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">.</span><span class="n">state</span><span class="p">,</span> <span class="n">State</span><span class="o">::</span><span class="n">Exit</span><span class="p">);</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">next_state</span><span class="p">)</span> <span class="o">=</span> <span class="n">advance</span><span class="p">(</span><span class="n">state</span><span class="p">);</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">state</span> <span class="o">=</span> <span class="n">next_state</span><span class="p">;</span>
+</span><span class='line'>        <span class="n">result</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">fn</span> <span class="n">advance</span><span class="p">(</span><span class="k">mut</span> <span class="n">state</span><span class="o">:</span> <span class="n">State</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">(</span><span class="nb">Option</span><span class="o">&lt;</span><span class="n">usize</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">State</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">loop</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">state</span> <span class="o">=</span> <span class="k">match</span> <span class="n">state</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">State</span><span class="o">::</span><span class="n">Enter</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">return_</span><span class="o">!</span><span class="p">(</span><span class="nb">Some</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span> <span class="n">State</span><span class="o">::</span><span class="n">AfterYield0</span><span class="p">);</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>            <span class="n">State</span><span class="o">::</span><span class="n">AfterYield0</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">return_</span><span class="o">!</span><span class="p">(</span><span class="nb">Some</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span> <span class="n">State</span><span class="o">::</span><span class="n">AfterYield1</span><span class="p">);</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>            <span class="n">State</span><span class="o">::</span><span class="n">AfterYield1</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">return_</span><span class="o">!</span><span class="p">(</span><span class="nb">Some</span><span class="p">(</span><span class="mi">2</span><span class="p">);</span> <span class="n">State</span><span class="o">::</span><span class="n">AfterYield2</span><span class="p">);</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>            <span class="n">State</span><span class="o">::</span><span class="n">AfterYield2</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">goto</span><span class="o">!</span><span class="p">(</span><span class="n">State</span><span class="o">::</span><span class="n">Exit</span><span class="p">);</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>            <span class="n">State</span><span class="o">::</span><span class="n">Exit</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">return_</span><span class="o">!</span><span class="p">(</span><span class="nb">None</span><span class="p">;</span> <span class="n">State</span><span class="o">::</span><span class="n">Exit</span><span class="p">);</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>We move the current <code>state</code> into <code>advance</code>, then have this <code>loop-match</code> state
+machine.  Then there are 2 new control flow constructs:
+<code>return_!($expr; $next_state)</code> and our old friend <code>goto!($next_state)</code>.
+<code>return_!()</code> returns some value and also sets the position the generator should
+resume at, and <code>goto!()</code> just sets the next state without leaving the function.</p>
+
+<p>Here&rsquo;s one way they might be implemented:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="n">macro_rules</span><span class="o">!</span> <span class="n">goto</span> <span class="p">{</span>
+</span><span class='line'>    <span class="p">(</span><span class="err">$</span><span class="n">next_state</span><span class="o">:</span><span class="n">expr</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="err">$</span><span class="n">state</span> <span class="o">=</span> <span class="err">$</span><span class="n">next_state</span><span class="p">;</span>
+</span><span class='line'>        <span class="k">continue</span><span class="p">;</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="n">macro_rules</span><span class="o">!</span> <span class="n">return_</span> <span class="p">{</span>
+</span><span class='line'>    <span class="p">(</span><span class="err">$</span><span class="n">result</span><span class="o">:</span> <span class="n">expr</span><span class="p">;</span> <span class="err">$</span><span class="n">next_state</span><span class="o">:</span><span class="n">expr</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="p">(</span><span class="err">$</span><span class="n">result</span><span class="p">,</span> <span class="err">$</span><span class="n">next_state</span><span class="p">);</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Relatively straightforward transformation, right?  But that&rsquo;s an easy case.
+Things start to get a wee bit more complicated when we start thinking about how
+we&rsquo;d transform <code>gen3</code>, because it&rsquo;s got both a <code>while</code> loop and a mutable
+variable.  Lets see that in action.  I&rsquo;ll leave out the boilerplate code and
+just focus on the <code>advance</code> function:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">fn</span> <span class="n">advance</span><span class="p">(</span><span class="k">mut</span> <span class="n">state</span><span class="o">:</span> <span class="n">State</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">(</span><span class="nb">Option</span><span class="o">&lt;</span><span class="n">usize</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">State</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">loop</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">match</span> <span class="n">state</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">State</span><span class="o">::</span><span class="n">Enter</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="kd">let</span> <span class="k">mut</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>                <span class="n">goto</span><span class="o">!</span><span class="p">(</span><span class="n">State</span><span class="o">::</span><span class="n">Loop</span><span class="p">(</span><span class="n">i</span><span class="p">));</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>            <span class="n">State</span><span class="o">::</span><span class="n">Loop</span><span class="p">(</span><span class="k">mut</span> <span class="n">i</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="mi">3</span> <span class="p">{</span>
+</span><span class='line'>                    <span class="n">goto</span><span class="o">!</span><span class="p">(</span><span class="n">State</span><span class="o">::</span><span class="n">Then</span><span class="p">(</span><span class="n">i</span><span class="p">));</span>
+</span><span class='line'>                <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>                    <span class="n">goto</span><span class="o">!</span><span class="p">(</span><span class="n">State</span><span class="o">::</span><span class="n">Else</span><span class="p">(</span><span class="n">i</span><span class="p">));</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>            <span class="n">State</span><span class="o">::</span><span class="n">Then</span><span class="p">(</span><span class="k">mut</span> <span class="n">i</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">return_</span><span class="o">!</span><span class="p">(</span><span class="nb">Some</span><span class="p">(</span><span class="n">i</span><span class="p">);</span> <span class="n">State</span><span class="o">::</span><span class="n">AfterYield</span><span class="p">(</span><span class="n">i</span><span class="p">));</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>            <span class="n">State</span><span class="o">::</span><span class="n">Else</span><span class="p">(</span><span class="k">mut</span> <span class="n">i</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">goto</span><span class="o">!</span><span class="p">(</span><span class="n">State</span><span class="o">::</span><span class="n">AfterLoop</span><span class="p">(</span><span class="n">i</span><span class="p">));</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>            <span class="n">State</span><span class="o">::</span><span class="n">AfterYield</span><span class="p">(</span><span class="k">mut</span> <span class="n">i</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>                <span class="n">goto</span><span class="o">!</span><span class="p">(</span><span class="n">State</span><span class="o">::</span><span class="n">Loop</span><span class="p">(</span><span class="n">i</span><span class="p">));</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>            <span class="n">State</span><span class="o">::</span><span class="n">AfterLoop</span><span class="p">(</span><span class="k">mut</span> <span class="n">i</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">goto</span><span class="o">!</span><span class="p">(</span><span class="n">State</span><span class="o">::</span><span class="n">Exit</span><span class="p">);</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>            <span class="n">State</span><span class="o">::</span><span class="n">Exit</span> <span class="o">=&gt;</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">return_</span><span class="o">!</span><span class="p">(</span><span class="nb">None</span><span class="p">;</span> <span class="n">State</span><span class="o">::</span><span class="n">Exit</span><span class="p">);</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Now things are getting interesting! There are two critical things we can see
+off the bat.  First, we need to reify the loops and conditionals into the state
+machine, because they affect the control flow.  Second, we need to lift any
+variables that are accessed across states into the <code>State</code> enum.</p>
+
+<p>We can also start seeing the complications.  The obvious one is mutable
+variables.  We need to somehow thread the information about <code>i</code>&rsquo;s mutability
+through each of the states.  This naive implementation would trip over the
+<code>#[warn(unused_mut)]</code> lint.  And now you might start to get a sense of the
+horror that lies beneath <code>Stateful</code>.</p>
+
+<p>At this point, you might be thinking to yourself, &ldquo;Self, if mutable variables
+are going to be complicated, what about copies and moves?&rdquo;  You sound like a
+pretty sensible person.  Therein lies madness.  You might want to stop thinking
+too deeply on it.  If you can&rsquo;t, maybe you think &ldquo;Wait.
+What about Generics?&rdquo; Yep.  &ldquo;Borrows?!&rdquo;  Now I&rsquo;m getting a little worried.
+&ldquo;How do you even know what&rsquo;s a variable!?!&rdquo;  Sorry.</p>
+
+<p>Yeah so there are one or two things that might be a tad challenging.</p>
+
+<hr />
+
+<p>So that&rsquo;s <code>Stateful</code>.  It&rsquo;s an experiment to get some real world experience
+with these control flow mechanisms that may someday feed into RFCs, and maybe,
+just maybe, might get implemented in the compiler.  There&rsquo;s no reason we need
+to support everything, which would require us to basically reimplement the
+compiler.  Instead, I believe there&rsquo;s a subset of Rust that we <em>can</em> support in
+order to start getting real experience now.</p>
+
+<p>Generators area really just the start.  There&rsquo;s a whole host of other things
+that really are just other things that, if you just squint at em, are really
+just state machines in disguise.  It&rsquo;s quite possible if we can pull
+<code>Stateful</code>, we&rsquo;ll also be able to implement things like
+<a href="https://en.wikipedia.org/wiki/Coroutine">Coroutines</a>,
+<a href="https://en.wikipedia.org/wiki/Continuation-passing_style">Continuations</a>, and
+that hot new mechanism all the cool languages are implementing these days,
+<a href="https://en.wikipedia.org/wiki/Await">Async/Await</a>.</p>
+
+<p>But that&rsquo;s all for later.  First is to get this to work.  In closing, I leave
+you with these wise words.</p>
+
+<blockquote><p>ph&#8217;nglui mglw&#8217;nafh Cthulhu R&#8217;lyeh wgah&#8217;nagl fhtagn.</p></blockquote>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[If You Use Unsafe, You Should Be Using Compiletest]]></title>

@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Rust | Chasing Rabbits]]></title>
   <link href="http://erickt.github.io/blog/categories/rust/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2015-11-24T14:06:24-08:00</updated>
+  <updated>2016-01-27T11:59:27-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -12,6 +12,288 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Stateful: A Rust Experimental Syntax Extension for Generators and More]]></title>
+    <link href="http://erickt.github.io/blog/2016/01/27/stateful-in-progress-generators/"/>
+    <updated>2016-01-27T08:31:27-08:00</updated>
+    <id>http://erickt.github.io/blog/2016/01/27/stateful-in-progress-generators</id>
+    <content type="html"><![CDATA[<p>AKA: Erick Does More Horrible Things to Rust</p>
+
+<p>Hello internet! It&rsquo;s been too long. Not only are the
+<a href="http://www.meetup.com/rust-bay-area">Rust Meetups</a> back up and running, it&rsquo;s
+time for me to start back to blogging. For the past couple months, I&rsquo;ve been
+working on a new syntax extension that will allow people to create fun and
+exciting new control flow mechanisms in stable Rust.  &ldquo;For the love of all that
+is sigils, why?!&rdquo;  Well, Because I can.  Sometimes when you stare into the
+madness, it stares back into you? Or something like that?</p>
+
+<p>It&rsquo;s called <a href="https://github.com/erickt/stateful">Stateful</a>, which helpfully has
+no documentation. Such an innocent name, right?  It&rsquo;s very much in progress
+(and mostly broken) implementation of some of the ideas in this and future
+posts.  So don&rsquo;t go and think these code snippets are executable just yet :)</p>
+
+<p>Anyway, lets show off <code>Stateful</code> by showing how we can implement
+<a href="https://en.wikipedia.org/wiki/Generator_%28computer_programming%29">Generators</a>.
+We&rsquo;ve got an <a href="https://github.com/rust-lang/rfcs/issues/388">RFC ticket</a> to
+implement them, but wouldn&rsquo;t it be nice to have them sooner?  For those of you
+unfamiliar with the concept, Generators are function that can be returned from
+multiple times, all while preserving state between those calls.  Basically,
+they&rsquo;re just a simpler way to write
+<a href="https://doc.rust-lang.org/std/iter/#iterator">Iterators</a>.</p>
+
+<p>Say we wanted to iterate over the numbers 0, 1, and 2.  Today, we would write
+an <code>Iterator</code> with something like this:</p>
+
+<pre><code class="rust">struct Iter3(usize);
+
+impl Iter3 {
+    fn new() -&gt; Self {
+        Iter3(0)
+    }
+}
+
+impl Iterator for Iter3 {
+    fn next(&amp;mut self) -&gt; Option&lt;usize&gt; {
+        if self.0 &lt; 3 {
+            let i = self.0;
+            self.0 += 1;
+            Some(i)
+        } else {
+            None
+        }
+    }
+}
+
+fn main() {
+    let iter = Iter3::new();
+    assert_eq!(iter.next(), Some(0));
+    assert_eq!(iter.next(), Some(1));
+    assert_eq!(iter.next(), Some(2));
+    assert_eq!(iter.next(), None);
+}
+</code></pre>
+
+<p>The struct preserves our state across these function calls.  It&rsquo;s a pretty
+straightforward implementation, but it does have some amount of boilerplate
+code. For large iterator implementations, this state management can get quite
+complicated.  Instead, lets see how this same code could be expressed with
+something like <code>Stateful</code>:</p>
+
+<pre><code class="rust">#![plugin(stateful)]
+
+#[generator]
+fn gen3() -&gt; Iterator&lt;Item=usize&gt; {
+    let mut i = 0;
+    while i &lt; 3 {
+        yield_!(i);
+        i += 1;
+    }
+}
+</code></pre>
+
+<p>Where <code>yield_!(i)</code> is some magical control flow mechanism that not only
+returned some value <code>Some(i)</code>, but also made sure on the <code>iter.next()</code> would
+jump the execution to just after the yield.  At the end of the generator, we&rsquo;d
+just return <code>None</code>.  We could simplify this even more by unrolling that loop
+into:</p>
+
+<pre><code class="rust">#[generator]
+fn gen3_unrolled() -&gt; Iterator&lt;Item=usize&gt; {
+    yield_!(0);
+    yield_!(1);
+    yield_!(2);
+}
+</code></pre>
+
+<p>The fun part is figuring out how to convert these generators into something
+that&rsquo;s roughly equivalent to <code>Iter3</code>.  At it&rsquo;s heart, <code>Iter3</code> really is a
+simple state machine, where we save the counter state in the structure before
+we &ldquo;yield&rdquo; the value to the caller.  Let&rsquo;s look at what we would generate for
+<code>gen3_unrolled</code>.</p>
+
+<p>First, we need some boilerplate, that sets up the state of our generator.  We
+don&rsquo;t yet have <a href="https://aturon.github.io/blog/2015/09/28/impl-trait/">impl
+trait</a>, so we hide all
+our stuff in a module:</p>
+
+<pre><code class="rust">fn gen_unrolled() -&gt; gen_unrolled::Generator {
+    gen_unrolled::Generator::new()
+}
+
+mod gen3_unrolled {
+    pub struct Generator {
+        state: State,
+    }
+
+    impl Generator {
+        pub fn new() -&gt; Self {
+            Generator {
+                state: State::Enter,
+            }
+        }
+    }
+
+    ...
+</code></pre>
+
+<p>We represent our generator&rsquo;s state with an enum.  We have our initial state, a
+state per yield, then an exit state:</p>
+
+<pre><code class="rust">    enum State {
+        Enter,
+        AfterYield0,
+        AfterYield1,
+        AfterYield2,
+        Exit,
+    }
+</code></pre>
+
+<p>Finally, we have our state machine, and a pretty trivial <code>Iterator</code>
+implementation that manages entering and exiting the state machine:</p>
+
+<pre><code class="rust">    impl Iterator for Generator {
+        type Item = usize;
+
+        fn next(&amp;mut self) -&gt; Option&lt;usize&gt; {
+            let state = mem::replace(&amp;mut self.state, State::Exit);
+            let (result, next_state) = advance(state);
+            self.state = next_state;
+            result
+        }
+    }
+
+    fn advance(mut state: State) -&gt; (Option&lt;usize&gt;, State) {
+        loop {
+            state = match state {
+                State::Enter =&gt; {
+                    return_!(Some(0); State::AfterYield0);
+                }
+                State::AfterYield0 =&gt; {
+                    return_!(Some(1); State::AfterYield1);
+                }
+                State::AfterYield1 =&gt; {
+                    return_!(Some(2); State::AfterYield2);
+                }
+                State::AfterYield2 =&gt; {
+                    goto!(State::Exit);
+                }
+                State::Exit =&gt; {
+                    return_!(None; State::Exit);
+                }
+            }
+        }
+    }
+}
+</code></pre>
+
+<p>We move the current <code>state</code> into <code>advance</code>, then have this <code>loop-match</code> state
+machine.  Then there are 2 new control flow constructs:
+<code>return_!($expr; $next_state)</code> and our old friend <code>goto!($next_state)</code>.
+<code>return_!()</code> returns some value and also sets the position the generator should
+resume at, and <code>goto!()</code> just sets the next state without leaving the function.</p>
+
+<p>Here&rsquo;s one way they might be implemented:</p>
+
+<pre><code class="rust">macro_rules! goto {
+    ($next_state:expr) =&gt; {
+        $state = $next_state;
+        continue;
+    }
+}
+
+macro_rules! return_ {
+    ($result: expr; $next_state:expr) =&gt; {
+        return ($result, $next_state);
+    }
+}
+</code></pre>
+
+<p>Relatively straightforward transformation, right?  But that&rsquo;s an easy case.
+Things start to get a wee bit more complicated when we start thinking about how
+we&rsquo;d transform <code>gen3</code>, because it&rsquo;s got both a <code>while</code> loop and a mutable
+variable.  Lets see that in action.  I&rsquo;ll leave out the boilerplate code and
+just focus on the <code>advance</code> function:</p>
+
+<pre><code class="rust">fn advance(mut state: State) -&gt; (Option&lt;usize&gt;, State) {
+    loop {
+        match state {
+            State::Enter =&gt; {
+                let mut i = 0;
+                goto!(State::Loop(i));
+            }
+            State::Loop(mut i) =&gt; {
+                if i &lt; 3 {
+                    goto!(State::Then(i));
+                } else {
+                    goto!(State::Else(i));
+                }
+            }
+            State::Then(mut i) =&gt; {
+                return_!(Some(i); State::AfterYield(i));
+            }
+            State::Else(mut i) =&gt; {
+                goto!(State::AfterLoop(i));
+            }
+            State::AfterYield(mut i) =&gt; {
+                i += 1;
+                goto!(State::Loop(i));
+            }
+            State::AfterLoop(mut i) =&gt; {
+                goto!(State::Exit);
+            }
+            State::Exit =&gt; {
+                return_!(None; State::Exit);
+            }
+        }
+    }
+}
+</code></pre>
+
+<p>Now things are getting interesting! There are two critical things we can see
+off the bat.  First, we need to reify the loops and conditionals into the state
+machine, because they affect the control flow.  Second, we need to lift any
+variables that are accessed across states into the <code>State</code> enum.</p>
+
+<p>We can also start seeing the complications.  The obvious one is mutable
+variables.  We need to somehow thread the information about <code>i</code>&rsquo;s mutability
+through each of the states.  This naive implementation would trip over the
+<code>#[warn(unused_mut)]</code> lint.  And now you might start to get a sense of the
+horror that lies beneath <code>Stateful</code>.</p>
+
+<p>At this point, you might be thinking to yourself, &ldquo;Self, if mutable variables
+are going to be complicated, what about copies and moves?&rdquo;  You sound like a
+pretty sensible person.  Therein lies madness.  You might want to stop thinking
+too deeply on it.  If you can&rsquo;t, maybe you think &ldquo;Wait.
+What about Generics?&rdquo; Yep.  &ldquo;Borrows?!&rdquo;  Now I&rsquo;m getting a little worried.
+&ldquo;How do you even know what&rsquo;s a variable!?!&rdquo;  Sorry.</p>
+
+<p>Yeah so there are one or two things that might be a tad challenging.</p>
+
+<hr />
+
+<p>So that&rsquo;s <code>Stateful</code>.  It&rsquo;s an experiment to get some real world experience
+with these control flow mechanisms that may someday feed into RFCs, and maybe,
+just maybe, might get implemented in the compiler.  There&rsquo;s no reason we need
+to support everything, which would require us to basically reimplement the
+compiler.  Instead, I believe there&rsquo;s a subset of Rust that we <em>can</em> support in
+order to start getting real experience now.</p>
+
+<p>Generators area really just the start.  There&rsquo;s a whole host of other things
+that really are just other things that, if you just squint at em, are really
+just state machines in disguise.  It&rsquo;s quite possible if we can pull
+<code>Stateful</code>, we&rsquo;ll also be able to implement things like
+<a href="https://en.wikipedia.org/wiki/Coroutine">Coroutines</a>,
+<a href="https://en.wikipedia.org/wiki/Continuation-passing_style">Continuations</a>, and
+that hot new mechanism all the cool languages are implementing these days,
+<a href="https://en.wikipedia.org/wiki/Await">Async/Await</a>.</p>
+
+<p>But that&rsquo;s all for later.  First is to get this to work.  In closing, I leave
+you with these wise words.</p>
+
+<blockquote><p>ph&#8217;nglui mglw&#8217;nafh Cthulhu R&#8217;lyeh wgah&#8217;nagl fhtagn.</p></blockquote>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[If You Use Unsafe, You Should Be Using Compiletest]]></title>
@@ -824,62 +1106,6 @@ simplify writing syntax extensions.</p>
 
 
 <p>Thanks for everyone&rsquo;s help with this release!</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Serde 0.3]]></title>
-    <link href="http://erickt.github.io/blog/2015/03/31/serde-0-dot-3/"/>
-    <updated>2015-03-31T19:57:37-07:00</updated>
-    <id>http://erickt.github.io/blog/2015/03/31/serde-0-dot-3</id>
-    <content type="html"><![CDATA[<p>I&rsquo;m happy to announce that I&rsquo;ve released
-<a href="https://github.com/erickt/rust-serde">serde</a> 0.3 on
-<a href="https://crates.io/crates/serde">crates.io</a> today.  For those unfamiliar with
-serde, it&rsquo;s a generic serialization framework, much like
-<a href="https://github.com/rust-lang/rustc-serialize/">rustc-serialize</a>, but much more
-powerful. Check out my <a href="http://erickt.github.io/blog/categories/serialization/">serialization series</a>
-if you&rsquo;re interested in serde&rsquo;s original development.</p>
-
-<p>There&rsquo;s been a ton of work since 0.2. Here are the highlights:</p>
-
-<ul>
-<li><p>Ported over from std::old_io to std::io. There is a bit of a performance hit
-when serializing to <code>&amp;mut [u8]</code>, although it&rsquo;s really not that bad. In my goser
-benchmarks, previously it ran in 373 MB/s, but now it&rsquo;s running at 260 MB/s.
-However, this hasn&rsquo;t impacted the <code>Vec&lt;u8&gt;</code> serialization performance, nor
-deserialization performance.</p></li>
-<li><p>Much better JSON deserialization errors. Now <code>std::io::Error</code> is properly
-propogated, and error locations are reported when a <code>Deserialize</code> raises an error.</p></li>
-<li><p>Merged <code>serde::ser::Serializer</code> and <code>serde::ser::Visitor</code>.</p></li>
-<li><p>Renamed <code>serde::ser::Serialize::visit</code> to <code>serde::ser::Serialize::serialize</code>.</p></li>
-<li><p>Replaced <code>serde::ser::{Seq,Map}Visitor::size_hint</code> with a <code>len()</code> method that
-returns an optional length. This has a little stronger emphasis that we either
-need an exactly length or no length. Formats that need an exact length should
-make sure to verify the length passed in matches the actual amount of values
-serialized.</p></li>
-<li><p><code>serde::json</code> now deserializes missing values as a <code>()</code>.</p></li>
-<li><p>Finished implementing <code>#[derive(Serialize, Deserialize)]</code> for all struct and
-enum forms.</p></li>
-<li><p>Ported <code>serde_macros</code> over to <a href="https://github.com/erickt/rust-aster">aster</a>
-and <a href="https://github.com/erickt/rust-quasi">quasi</a>, which simplies code
-generation.</p></li>
-<li><p>Removed the unnessary <code>first</code> argument from <code>visit_{seq,map}_elt</code>.</p></li>
-<li><p>Rewrote enum deserializations to not require allocations. Oddly enough this
-is a tad slower than the allocation form. I suspect it&rsquo;s coming from the
-function calls not getting inlined away.</p></li>
-<li><p>Allowed enum serialization and deserialization to support more than one
-variant.</p></li>
-<li><p>Allowed <code>Deserialize</code> types to hint that it&rsquo;s expecting a sequence or a map.</p></li>
-<li><p>Allowed maps to be deserialized from a <code>()</code>.</p></li>
-<li><p>Added a <code>serde::bytes::{Bytes,ByteBuf}</code>, which wrap <code>&amp;[u8]</code>/<code>Vec&lt;u8&gt;</code> to allow
-some formats to encode these values more efficiently than generic sequences.</p></li>
-<li><p>Added <code>serde::de::value</code>, which contains some helper deserializers to
-deserialize from a Rust type.</p></li>
-<li><p>Added impls for most collection types in the standard library.</p></li>
-</ul>
-
-
-<p>Thanks everyone that&rsquo;s helped out with this release!</p>
 ]]></content>
   </entry>
   
