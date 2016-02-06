@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Async/await | Chasing Rabbits]]></title>
   <link href="http://erickt.github.io/blog/categories/async-slash-await/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2016-01-27T11:59:27-08:00</updated>
+  <updated>2016-02-05T16:49:48-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -12,6 +12,479 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Stateful, Part 2: How Stateful Cheats at Analysis]]></title>
+    <link href="http://erickt.github.io/blog/2016/01/28/stateful/"/>
+    <updated>2016-01-28T08:22:33-08:00</updated>
+    <id>http://erickt.github.io/blog/2016/01/28/stateful</id>
+    <content type="html"><![CDATA[<p>As I mentioned in the last
+<a href="https://erickt.github.io/blog/2016/01/27/stateful-in-progress-generators/">part</a>,
+<code>Stateful</code> has some challenges it needs to overcome in order to add new and
+exciting control flow mechanisms to Rust.  While we don&rsquo;t get access to any of
+the cool analysis passes inside the Rust compiler, <code>Stateful</code> is able to sneak
+around their necessity in many cases since it really only needs to support a
+subset of Rust.  Here are some of the techniques it exploits, err, uses.</p>
+
+<h3>Variables</h3>
+
+<p>First off, let&rsquo;s talk about variables.  One of the primary things <code>Stateful</code>
+needs to do is manage the process of state flowing through the machine.  However,
+consider a statement like this:</p>
+
+<pre><code class="rust">let x = ...;
+</code></pre>
+
+<p>&ldquo;Obviously it&rsquo;s a variable, right?&rdquo;  Actually you can&rsquo;t be sure.  What if
+someone did:</p>
+
+<pre><code class="rust">enum Foo {
+    x,
+}
+use Foo::*;
+</code></pre>
+
+<p>Well then the compiler would helpfully report:</p>
+
+<pre><code>foo.rs:7:9: 7:10 error: declaration of `x` shadows an enum variant or unit-like struct in scope [E0413]
+foo.rs:7     let x = x;
+</code></pre>
+
+<p>But that warning only works for simple <code>let</code> statements.  Consider what happens
+with matches.  Consider:</p>
+
+<pre><code class="rust">match ... {
+    x =&gt; { ... }
+    y =&gt; { ... }
+}
+</code></pre>
+
+<p>Is <code>x</code> or <code>y</code> a variable, or a variant?  There&rsquo;s no way to know unless you
+perform name resolution, otherwise known as the resolve pass in the compiler.
+Unfortunately though, there&rsquo;s no way for <code>Stateful</code> to run that analysis.  As
+Sméagol said, &ldquo;There is another way.  More secret, and dark way.&rdquo;.  This leads
+us to Cheat Number One: <strong>Stateful assumes that all lowercase identifiers are
+variables, and uppercase ones are enum variants.</strong> Sure, Rust supports
+lowercase variants, but there&rsquo;s no reason why <code>Stateful</code> has to use them.  It
+makes our lives much easier.</p>
+
+<h3>Types</h3>
+
+<p>The next problem is typing.  Sure, Rust is nice and all that you can write a
+local variable like <code>let x = ...</code> and it&rsquo;ll infer the type for you.  All Rust
+asks for is that the user explicitly specify the type of a value that enters or
+leaves the bounds of a function.  Our problem is that one of the main tasks of
+<code>Stateful</code> is to lift variables into some <code>State</code> structure so that their
+available when the function is re-entered.  So in effect, all variables inside
+<code>Stateful</code> must be typed.  Consider the example from last week:</p>
+
+<pre><code class="rust">fn advance(mut state: State) -&gt; (Option&lt;usize&gt;, State) {
+    loop {
+        match state {
+            State::Enter =&gt; {
+                let mut i = 0;
+                goto!(State::Loop { i: i });
+            }
+            State::Loop { mut i } =&gt; {
+                if i &lt; 3 {
+                    goto!(State::Then { i: i });
+                } else {
+                    goto!(State::Else { i: i });
+                }
+            }
+            State::Then { mut i } =&gt; {
+                return_!(Some(i); State::AfterYield { i: i });
+            }
+            State::Else { mut i } =&gt; {
+                goto!(State::AfterLoop { i: i });
+            }
+            State::AfterYield { mut i } =&gt; {
+                i += 1;
+                goto!(State::Loop { i: i });
+            }
+            State::AfterLoop { mut i } =&gt; {
+                goto!(State::Exit);
+            }
+            State::Exit =&gt; {
+                return_!(None; State::Exit);
+            }
+        }
+    }
+}
+</code></pre>
+
+<p>This <code>State</code> enumeration is what I&rsquo;m talking about.  It gets passed into and
+out of the <code>advance</code> function.  It needs to be some concrete type, which looks
+something like this:</p>
+
+<pre><code class="rust">enum State {
+    Enter,
+    Loop { i: usize },
+    Then { i: usize },
+    Else { i: usize },
+    AfterYield { i: usize },
+    AfterLoop { i: usize },
+    Exit,
+}
+</code></pre>
+
+<p>The problem is that we want to write code like this:</p>
+
+<pre><code class="rust">#[generator]
+fn gen3() -&gt; Iterator&lt;Item=usize&gt; {
+    let mut i = 0;
+    while i &lt; 3 {
+        yield_!(i);
+        i += 1;
+    }
+}
+</code></pre>
+
+<p>So how can we resolve this?  Well first, we could wait for
+<a href="https://github.com/rust-lang/rfcs/pull/105">RFC 105</a>
+or <a href="https://github.com/rust-lang/rfcs/pull/1305">RFC 1305</a> to get implemented,
+but that&rsquo;s not happening any time soon.  Until then, there is cheat number two:
+<strong>Hide state variables in a boxed trait</strong>.  This one is from Eduard Burtescu.
+Instead of the nice well typed example from the last post, we actually generate
+some code that hides the types with an over abundance of generic types:</p>
+
+<pre><code class="rust">fn gen3() -&gt; Iterator&lt;Item=usize&gt; {
+    struct Wrapper&lt;S, F&gt; {
+        state: S,
+        next: F,
+    }
+
+    impl&lt;S, T, F&gt; Iterator for Wrapper&lt;S, F&gt;
+        where S: Default,
+              F: Fn(S) -&gt; (Option&lt;T&gt;, S)
+      {
+          type Item = T;
+
+          fn next(&amp;mut self) -&gt; Option&lt;Self::Item&gt; {
+              let old_state = ::std::mem::replace(
+                  &amp;mut self.state,
+                  S::default());
+
+              let (value, next_state) = (self.next)(old_state);
+              self.state = next_state;
+              value
+          }
+      }
+
+    enum State&lt;T0&gt; {
+        Enter,
+        Loop { i: T0 },
+        Then { i: T0 },
+        Else { i: T0 },
+        AfterYield { i: T0 },
+        AfterLoop { i: T0 },
+        Exit,
+    }
+
+    impl&lt;T0&gt; Default for State&lt;T0&gt; {
+        fn default() -&gt; Self {
+            {
+                State::State1End
+            }
+        }
+    }
+
+    Box::new(Wrapper::new(State::Start, |mut state| {
+        loop {
+            match state {
+                State::Enter =&gt; {
+                    let mut i = 0;
+                    goto!(State::Loop { i: i });
+                }
+                State::Loop { mut i } =&gt; {
+                    if i &lt; 3 {
+                        goto!(State::Then { i: i });
+                    } else {
+                        goto!(State::Else { i: i });
+                    }
+                }
+                State::Then { mut i } =&gt; {
+                    return_!(Some(i); State::AfterYield { i: i });
+                }
+                State::Else { mut i } =&gt; {
+                    goto!(State::AfterLoop { i: i });
+                }
+                State::AfterYield { mut i } =&gt; {
+                    i += 1;
+                    goto!(State::Loop { i: i });
+                }
+                State::AfterLoop { mut i } =&gt; {
+                    goto!(State::Exit);
+                }
+                State::Exit =&gt; {
+                    return_!(None; State::Exit);
+                }
+            }
+        }
+    }))
+}
+</code></pre>
+
+<p>All for the cost of a boxed variable.  It&rsquo;s not ideal, but it does let us keep
+experimenting.  However, if we do want to avoid this allocation, we can just
+require that all variables that survive across a yield point have their type
+specified.  So our previous example would be written as:</p>
+
+<pre><code class="rust">#[generator]
+fn gen3() -&gt; Iterator&lt;Item=usize&gt; {
+    let mut i: usize = 0;
+    while i &lt; 3 {
+        yield_!(i);
+        i += 1;
+    }
+}
+</code></pre>
+
+<p>It&rsquo;s not so bad here, but it&rsquo;d get obnoxious if we had a generator like:</p>
+
+<pre><code class="rust">#[generator]
+fn complicated(items: &amp;[usize]) -&gt; Iterator&lt;Item=usize&gt; {
+    let iter = items.iter().map(|item| item * 3);
+
+    for item in iter {
+        yield_!(item);
+    }
+}
+</code></pre>
+
+<p>The type of <code>iter</code>, by the way, is impossible to write because there is
+currently no way to specify the type of the closure.  Instead, it needs to be
+rewritten to use a free function:</p>
+
+<pre><code class="rust">#[generator]
+fn complicated(items: &amp;[usize]) -&gt; Iterator&lt;Item=usize&gt; {
+    fn map&lt;'a&gt;(item: &amp;'a usize) -&gt; usize { *item * 3 }
+
+    let iter: std::iter::Map&lt;
+            std::slice::Iter&lt;'a, usize&gt;,
+            fn(&amp;'a usize) -&gt; usize
+        &gt;
+        = items.iter().map(map);
+
+    for item in iter {
+        yield_!(item);
+    }
+}
+</code></pre>
+
+<p>If we want to support closures though, we need to use the <code>Box&lt;Iterator&lt;...&gt;</code>
+trick.</p>
+
+<h3>References</h3>
+
+<p>This one&rsquo;s a doozy.  Here&rsquo;s an example of the problem.  Consider:</p>
+
+<pre><code class="rust">#[generator]
+fn gen&lt;'a&gt;(opt: Option&lt;&amp;'a mut usize&gt;) -&gt; Iterator&lt;Item=&amp;'a mut usize&gt; {
+    match opt {
+        Some(value) =&gt; { yield_!(value); }
+        None =&gt; { }
+    }
+}
+</code></pre>
+
+<p>This would look something like this (which also demonstrates how <code>match</code>
+statements are represented):</p>
+
+<pre><code class="rust">...
+Box::new(Wrapper::new(State::State0Start { opt: opt }, |mut state| {
+    loop {
+        match state {
+            State::State0Start { opt: opt } =&gt; {
+                match opt {
+                    Some(value) =&gt; {
+                        state = State::State2Arm {
+                            opt: opt,
+                            value: value,
+                        };
+                        continue;
+                    }
+                    None =&gt; {
+                        state = State::State3Arm { opt: opt };
+                        continue;
+                    }
+                }
+            }
+            State::State1End =&gt; {
+                return (::std::option::Option::None, State::State1End);
+            }
+            State::State2Arm { opt: opt, value: value } =&gt; {
+                return (::std::option::Option::Some(value),
+                        State::State5AfterYield {
+                    opt: opt,
+                    value: value,
+                });
+            }
+            State::State3Arm { opt: opt } =&gt; {
+                {
+                };
+                state = State::State4MatchJoin { opt: opt };
+                continue;
+            }
+            State::State4MatchJoin { opt: opt } =&gt; {
+                ::std::mem::drop(opt);
+                state = State::State1End;
+                continue;
+            }
+            State::State5AfterYield {
+                              opt: opt, value: value } =&gt; {
+                ::std::mem::drop(value);
+                state = State::State4MatchJoin { opt: opt };
+                continue;
+            }
+        }
+    }
+}))
+</code></pre>
+
+<p>Zero in on this block:</p>
+
+<pre><code class="rust">...
+Some(value) =&gt; {
+    state = State::State2Arm {
+        opt: opt,
+        value: value,
+    };
+    continue;
+}
+...
+</code></pre>
+
+<p>The type of <code>opt</code> is <code>Option&lt;&amp;'a mut usize&gt;</code>, and <code>value</code> is <code>&amp;'a mut usize</code>.
+So we&rsquo;ve got two outstanding mutable borrows, which is illegal.  The real
+problem is that <code>Stateful</code> without Resolve and the Borrow Checker pass, it
+cannot know if a use of the variable is a copy or move in all cases.  So we now
+have cheat number 3: <strong>Use pseudo-macros to hint to Stateful if a type is
+copyable or movable</strong>.  This is the same technique we use to implement the
+pseudo-macro <code>yield_!(...)</code>, where we would add <code>move_!(...)</code> and <code>copy_!(...)</code>
+to inform <code>Stateful</code> when something has been, well, moved or copied.  Our
+previous example would then be written as:</p>
+
+<pre><code class="rust">#[generator]
+fn gen&lt;'a&gt;(opt: Option&lt;&amp;'a mut usize&gt;) -&gt; Iterator&lt;Item=&amp;'a mut usize&gt; {
+    match move_!(opt) {
+        Some(value) =&gt; { yield_!(value); }
+        None =&gt; { }
+    }
+}
+</code></pre>
+
+<p>Which would then give <code>Stateful</code> enough information to generate something like
+this, which would then know that the match consumed the option:</p>
+
+<pre><code class="rust">Box::new(Wrapper::new(State::State0Start { opt: opt }, |mut state| {
+    loop {
+        match state {
+            State::State0Start { opt: opt } =&gt; {
+                match opt {
+                    Some(value) =&gt; {
+                        state = State::State2Arm {
+                            value: value,
+                        };
+                        continue;
+                    }
+                    None =&gt; {
+                        state = State::State3Arm;
+                        continue;
+                    }
+                }
+            }
+            State::State1End =&gt; {
+                return (::std::option::Option::None, State::State1End);
+            }
+            State::State2Arm { value: value } =&gt; {
+                return (::std::option::Option::Some(value),
+                State::State5AfterYield);
+            }
+            State::State3Arm =&gt; {
+                state = State::State4MatchJoin;
+                continue;
+            }
+            State::State4MatchJoin =&gt; {
+                state = State::State1End;
+                continue;
+            }
+            State::State5AfterYield =&gt; {
+                state = State::State4MatchJoin;
+                continue;
+            }
+        }
+    }
+}))
+</code></pre>
+
+<p>I&rsquo;m also considering some default rules, that can be overridden with these
+macros:</p>
+
+<ul>
+<li>If a value is known to be copyable (it&rsquo;s a primitive type, or it&rsquo;s a <code>&amp;T</code>
+type), then it&rsquo;s always copied. All other types are assumed to not be
+copyable.</li>
+<li>Non-copyable types are moved when passed into a function argument, unless
+wrapped in a <code>copy_!(...)</code> hint.</li>
+<li>Non-copyable type method calls are by reference, unless explicitly wrapped in
+a <code>move_!(...)</code> hint.</li>
+<li>Non-copyable types are moved in <code>match</code> statement, unless one of the match
+arms uses <code>ref</code> or <code>ref mut</code>.</li>
+</ul>
+
+
+<p>Hopefully this will enable a vast majority of code to work without
+<code>copy_!(...)</code> or <code>move_!(...)</code>.</p>
+
+<h3>Conclusion</h3>
+
+<p>Those are our major cheats!  I&rsquo;m sure there will be plenty more in the future.
+In the meantime, I want to show off some some actual working code!  Check this
+puppy out!</p>
+
+<pre><code class="rust">#![feature(plugin)]
+#![plugin(stateful)]
+
+#![allow(dead_code)]
+#![allow(non_shorthand_field_patterns)]
+#![allow(unused_mut)]
+#![allow(unused_variables)]
+
+#[generator]
+fn gen&lt;'a, T&gt;(items: &amp;'a [T]) -&gt; &amp;'a T {
+    let mut iter = items.iter();
+    loop {
+        match iter.next() {
+            Some(item) =&gt; {
+                yield_!(item);
+            }
+            None =&gt; {
+                break;
+            }
+        };
+    };
+}
+
+fn main() {
+    let items = &amp;[1, 2, 3];
+    for value in gen(items).take(20) {
+        println!("{}", value);
+    }
+}
+</code></pre>
+
+<p>Produces:</p>
+
+<pre><code>1
+2
+3
+</code></pre>
+
+<p>Isn&rsquo;t it beautiful?  We got generics, mutable variables, loops, matches,
+breaks, <strong>and</strong> a whole host of ignored warnings!</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Stateful: A Rust Experimental Syntax Extension for Generators and More]]></title>
