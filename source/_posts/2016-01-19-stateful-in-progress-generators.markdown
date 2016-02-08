@@ -109,8 +109,8 @@ trait](https://aturon.github.io/blog/2015/09/28/impl-trait/), so we hide all
 our stuff in a module:
 
 ```rust
-fn gen_unrolled() -> gen_unrolled::Generator {
-    gen_unrolled::Generator::new()
+fn gen3_unrolled() -> gen3_unrolled::Generator {
+    gen3_unrolled::Generator::new()
 }
 
 mod gen3_unrolled {
