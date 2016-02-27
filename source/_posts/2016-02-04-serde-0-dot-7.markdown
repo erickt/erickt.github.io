@@ -41,7 +41,7 @@ On to the list on the major changes!
   as in:
 
 ```rust
-#[serde(deny_unknown_fields)
+#[serde(deny_unknown_fields)]
 struct Point {
     x: usize,
     y: usize,
@@ -101,7 +101,7 @@ trait ShouldSkip {
 
 struct Point<T: ShouldSkip> {
     x: T,
-    #[serde(default="ShouldSkip::should_skip")]
+    #[serde(skip_serializing_if="ShouldSkip::should_skip")]
     y: T,
 }
 ```
