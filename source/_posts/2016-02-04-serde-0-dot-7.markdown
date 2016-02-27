@@ -1,0 +1,152 @@
+---
+layout: post
+title: "Serde 0.7"
+date: 2016-02-26 23:06:11 -0800
+comments: true
+categories: [rust, serialization, serde]
+---
+
+I'm thrilled to announce [Serde](https://github.com/serde-rs/serde) 0.7.0!
+It's been a long time coming, and has a number of long awaited new features,
+breaking changes, and other notable changes.  Serde 0.6.x is now deprecated,
+and while I'll try to keep `serde_codegen` and `serde_macros` while projects
+switch over to 0.7, I'm going to shift more to a pull-based approach, so please
+file a bug ticket if a nightly release has broken you.
+
+On to the list on the major changes!
+
+## Serde
+
+* Removed the word `Error` from `serde::de::Error` variants.
+* Renamed `visit_` methods to `serialize_` and `deserialize_`.
+* Removed dependency on the deprecated [num](https://github.com/rust-num/num)
+  crate.
+* Require that implementations of `serde::de::Error` implement
+  `std::error::Error`.
+* Added `serde::de::Deserializer::deserialize_struct_field` hook that allows a
+  `Deserializer` to know the next value is a struct field.
+* Added `serde::ser::Error`, which allows a `Serialize` type produce an error
+  if it cannot be serialized.
+* Serializing `std::path::Path` with non-unicode characters will result in a
+  Serde error, rather than a panic.
+* Added implementations for `std::net` types.
+* Added `serde::de::Error::unknown_variant` error message hook.
+* Renamed `serde::de::Error::syntax` to `serde::de::Error::custom`.
+
+## Serde Codegen and Macros
+
+* Serde now by default ignores unknown fields when deserializing.  The previous
+  behavior, where Serde will report unknown fields as an error, can be
+	opted in with the container annotation `#[serde(deny_unknown_fields)]`,
+  as in:
+
+```rust
+#[serde(deny_unknown_fields)
+struct Point {
+    x: usize,
+    y: usize,
+}
+```
+
+* Added the container annotation `#[serde(rename="...")]`to rename the
+  container, as in:
+
+```rust
+#[serde(rename="point")]
+struct Point {
+    x: usize,
+    y: usize,
+}
+```
+
+* Added the variantl annotation `#[serde(rename="...")]` to rename
+  variants, as in:
+
+```rust
+enum Value {
+    #[serde(rename="type")]
+    Type
+}
+```
+
+* Added rename annotation `#[serde(rename(serialize="...", deserialize="..."))]`
+	that supports crazy schemas like AWS that expect serialized fields with the
+  first character lower case, and the deserialized response with the first
+  character upper cased.
+* Removed support for the unused format-specific rename support.
+* Added the field annotation `#[serde(default="$path")]`, where `$path` is a
+  reference to some function that returns a default value for a field if it's
+  not present when deserializing.  For example:
+
+```rust
+trait MyDefault {
+    fn my_default() -> Self;
+}
+
+struct Point<T: MyDefault> {
+    x: T,
+    #[serde(default="MyDefault::my_default")]
+    y: T,
+}
+```
+
+* Added the field annotation `#[serde(skip_serializing_if="$path")]`, where
+  `$path` is a path reference to some function that returns a `bool`, that if
+  true, should skip serializing the field.
+
+```rust
+trait ShouldSkip {
+    fn should_skip(&self) -> bool;
+}
+
+struct Point<T: ShouldSkip> {
+    x: T,
+    #[serde(default="ShouldSkip::should_skip")]
+    y: T,
+}
+```
+
+* Added the field annotations `#[serde(serialize_with="$path")]` and
+  `#[serde(deserialize_with="$path")]`, where `$path` us a path reference to
+  some function that serializes a field, as in:
+
+```rust
+trait MySerialization {
+    fn serialize_with<S: Serializer>(&self, serializer: &mut S) -> Result<(), S::Error>;
+
+    fn deserialize_with<D: Deserializer>(deserializer: &mut D) -> Result<Self, D::Error>;
+}
+
+struct Record {
+    #[serde(serialize_with="MySerialization::serialize_with")]
+    #[serde(deserialize_with="MySerialization::deserialize_with")]
+    timestamp: time::Timespec,
+}
+```
+
+## Serde JSON
+
+* Added `StreamDeserializer`, that enables parsing a stream of JSON values optionally
+  separated by whitespace into an iterator of those deserialized values.
+
+## Thanks
+
+I'd like to thank everyone that's helped out over the past few months. Please
+forgive me if I accidentally left you off the list:
+
+* Craig M. Brandenburg
+* Florian Gilcher
+* Hans Kristian Flaatten
+* Issam Hakimi
+* Joe Wilm
+* John Heitmann
+* Marek Kotewicz
+* Ms2ger
+* Nathan Lilienthal
+* Oliver Schneider
+* Paul Woolcock
+* Roma Sokolov
+* Simon Persson
+* Thomas Bahn
+* Tom Jakubowski
+* thorbenk
