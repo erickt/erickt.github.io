@@ -4,7 +4,7 @@
   <title><![CDATA[Chasing Rabbits]]></title>
   <link href="http://erickt.github.io/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2016-02-08T14:10:32-08:00</updated>
+  <updated>2016-02-26T23:11:25-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -12,6 +12,228 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Serde 0.7]]></title>
+    <link href="http://erickt.github.io/blog/2016/02/26/serde-0-dot-7/"/>
+    <updated>2016-02-26T23:06:11-08:00</updated>
+    <id>http://erickt.github.io/blog/2016/02/26/serde-0-dot-7</id>
+    <content type="html"><![CDATA[<p>I&rsquo;m thrilled to announce <a href="https://github.com/serde-rs/serde">Serde</a> 0.7.0!
+It&rsquo;s been a long time coming, and has a number of long awaited new features,
+breaking changes, and other notable changes.  Serde 0.6.x is now deprecated,
+and while I&rsquo;ll try to keep <code>serde_codegen</code> and <code>serde_macros</code> while projects
+switch over to 0.7, I&rsquo;m going to shift more to a pull-based approach, so please
+file a bug ticket if a nightly release has broken you.</p>
+
+<p>On to the list on the major changes!</p>
+
+<h2>Serde</h2>
+
+<ul>
+<li>Removed the word <code>Error</code> from <code>serde::de::Error</code> variants.</li>
+<li>Renamed <code>visit_</code> methods to <code>serialize_</code> and <code>deserialize_</code>.</li>
+<li>Removed dependency on the deprecated <a href="https://github.com/rust-num/num">num</a>
+crate.</li>
+<li>Require that implementations of <code>serde::de::Error</code> implement
+<code>std::error::Error</code>.</li>
+<li>Added <code>serde::de::Deserializer::deserialize_struct_field</code> hook that allows a
+<code>Deserializer</code> to know the next value is a struct field.</li>
+<li>Added <code>serde::ser::Error</code>, which allows a <code>Serialize</code> type produce an error
+if it cannot be serialized.</li>
+<li>Serializing <code>std::path::Path</code> with non-unicode characters will result in a
+Serde error, rather than a panic.</li>
+<li>Added implementations for <code>std::net</code> types.</li>
+<li>Added <code>serde::de::Error::unknown_variant</code> error message hook.</li>
+<li>Renamed <code>serde::de::Error::syntax</code> to <code>serde::de::Error::custom</code>.</li>
+</ul>
+
+
+<h2>Serde Codegen and Macros</h2>
+
+<ul>
+<li>Serde now by default ignores unknown fields when deserializing.  The previous
+behavior, where Serde will report unknown fields as an error, can be
+  opted in with the container annotation <code>#[serde(deny_unknown_fields)]</code>,
+as in:</li>
+</ul>
+
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="cp">#[serde(deny_unknown_fields)</span>
+</span><span class='line'><span class="cp">struct Point {</span>
+</span><span class='line'><span class="cp">    x: usize,</span>
+</span><span class='line'><span class="cp">    y: usize,</span>
+</span><span class='line'><span class="cp">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>Added the container annotation <code>#[serde(rename="...")]</code>to rename the
+container, as in:</li>
+</ul>
+
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="cp">#[serde(rename=</span><span class="s">&quot;point&quot;</span><span class="cp">)]</span>
+</span><span class='line'><span class="k">struct</span> <span class="n">Point</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">x</span><span class="o">:</span> <span class="n">usize</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">y</span><span class="o">:</span> <span class="n">usize</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>Added the variantl annotation <code>#[serde(rename="...")]</code> to rename
+variants, as in:</li>
+</ul>
+
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">enum</span> <span class="n">Value</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[serde(rename=</span><span class="s">&quot;type&quot;</span><span class="cp">)]</span>
+</span><span class='line'>    <span class="n">Type</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>Added rename annotation <code>#[serde(rename(serialize="...", deserialize="..."))]</code>
+  that supports crazy schemas like AWS that expect serialized fields with the
+first character lower case, and the deserialized response with the first
+character upper cased.</li>
+<li>Removed support for the unused format-specific rename support.</li>
+<li>Added the field annotation <code>#[serde(default="$path")]</code>, where <code>$path</code> is a
+reference to some function that returns a default value for a field if it&rsquo;s
+not present when deserializing.  For example:</li>
+</ul>
+
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">trait</span> <span class="n">MyDefault</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">my_default</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Self</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">struct</span> <span class="n">Point</span><span class="o">&lt;</span><span class="n">T</span><span class="o">:</span> <span class="n">MyDefault</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">x</span><span class="o">:</span> <span class="n">T</span><span class="p">,</span>
+</span><span class='line'>    <span class="cp">#[serde(default=</span><span class="s">&quot;MyDefault::my_default&quot;</span><span class="cp">)]</span>
+</span><span class='line'>    <span class="n">y</span><span class="o">:</span> <span class="n">T</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>Added the field annotation <code>#[serde(skip_serializing_if="$path")]</code>, where
+<code>$path</code> is a path reference to some function that returns a <code>bool</code>, that if
+true, should skip serializing the field.</li>
+</ul>
+
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">trait</span> <span class="n">ShouldSkip</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">should_skip</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kt">bool</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">struct</span> <span class="n">Point</span><span class="o">&lt;</span><span class="n">T</span><span class="o">:</span> <span class="n">ShouldSkip</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">x</span><span class="o">:</span> <span class="n">T</span><span class="p">,</span>
+</span><span class='line'>    <span class="cp">#[serde(default=</span><span class="s">&quot;ShouldSkip::should_skip&quot;</span><span class="cp">)]</span>
+</span><span class='line'>    <span class="n">y</span><span class="o">:</span> <span class="n">T</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>Added the field annotations <code>#[serde(serialize_with="$path")]</code> and
+<code>#[serde(deserialize_with="$path")]</code>, where <code>$path</code> us a path reference to
+some function that serializes a field, as in:</li>
+</ul>
+
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">trait</span> <span class="n">MySerialization</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">serialize_with</span><span class="o">&lt;</span><span class="n">S</span><span class="o">:</span> <span class="n">Serializer</span><span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span> <span class="n">serializer</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">S</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="n">S</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">deserialize_with</span><span class="o">&lt;</span><span class="n">D</span><span class="o">:</span> <span class="n">Deserializer</span><span class="o">&gt;</span><span class="p">(</span><span class="n">deserializer</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">D</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">Result</span><span class="o">&lt;</span><span class="n">Self</span><span class="p">,</span> <span class="n">D</span><span class="o">::</span><span class="n">Error</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">struct</span> <span class="n">Record</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[serde(serialize_with=</span><span class="s">&quot;MySerialization::serialize_with&quot;</span><span class="cp">)]</span>
+</span><span class='line'>    <span class="cp">#[serde(deserialize_with=</span><span class="s">&quot;MySerialization::deserialize_with&quot;</span><span class="cp">)]</span>
+</span><span class='line'>    <span class="n">timestamp</span><span class="o">:</span> <span class="n">time</span><span class="o">::</span><span class="n">Timespec</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>Serde JSON</h2>
+
+<ul>
+<li>Added <code>StreamDeserializer</code>, that enables parsing a stream of JSON values optionally
+separated by whitespace into an iterator of those deserialized values.</li>
+</ul>
+
+
+<h2>Thanks</h2>
+
+<p>I&rsquo;d like to thank everyone that&rsquo;s helped out over the past few months. Please
+forgive me if I accidentally left you off the list:</p>
+
+<ul>
+<li>Craig M. Brandenburg</li>
+<li>Florian Gilcher</li>
+<li>Hans Kristian Flaatten</li>
+<li>Issam Hakimi</li>
+<li>Joe Wilm</li>
+<li>John Heitmann</li>
+<li>Marek Kotewicz</li>
+<li>Ms2ger</li>
+<li>Nathan Lilienthal</li>
+<li>Oliver Schneider</li>
+<li>Paul Woolcock</li>
+<li>Roma Sokolov</li>
+<li>Simon Persson</li>
+<li>Thomas Bahn</li>
+<li>Tom Jakubowski</li>
+<li>thorbenk</li>
+</ul>
+
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Stateful, Part 2: How Stateful Cheats at Analysis]]></title>
@@ -9297,649 +9519,6 @@ optimize calls into tailcalls.</p>
 
 <p>Unless I&rsquo;m doing something glaringly wrong, it seems likely that we are going
 to need some compiler help before these performance issues get solved.</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Meal, Ready-to-Eat: A Web Framework for Rust]]></title>
-    <link href="http://erickt.github.io/blog/2012/07/05/meal-ready-to-eat-a-web-framework-for-rust/"/>
-    <updated>2012-07-05T08:55:00-07:00</updated>
-    <id>http://erickt.github.io/blog/2012/07/05/meal-ready-to-eat-a-web-framework-for-rust</id>
-    <content type="html"><![CDATA[<p>I&rsquo;ve been putting this off for far too long. For the last three months I&rsquo;ve
-been working on <a href="https://github.com/erickt/mre">Meal, Ready-to-Eat</a>, a web
-framework for the <a href="http://rust-lang.org">Rust programming language</a>. I call it
-MRE. Rust didn&rsquo;t have a TCP stack when I started the project, so instead I
-built MRE on top of <a href="http://mongrel2.org">Mongrel2</a>. It talks
-<a href="http://zeromq.org">Zeromq</a>, so I could get something up pretty quickly. It&rsquo;s
-inspired by <a href="http://www.sinatrarb.com/">Sinatra</a> and
-<a href="http://expressjs.com/">Express.js</a>.  So take all this code with a grain of
-salt. The design is very much in flux and there are some pretty rough edges.
-Better to release early and get feedback though, right?</p>
-
-<p>One word of warning though. Rust&rsquo;s syntax and semantics are still in flux, so
-it&rsquo;s quite possible this blog post will be out of date by the time you read it.</p>
-
-<h2>Hello World</h2>
-
-<p>Let&rsquo;s start with the classic Hello World app. You can find the full example
-<a href="https://github.com/erickt/mre/blob/master/examples/helloworld/helloworld.rs">here</a>.
-This example is a little more verbose than frameworks like Sinatra and Express,
-and not just because Rust is statically typed. Those other frameworks take
-advantage of global variables and static initializers, but Rust doesn&rsquo;t, so we
-have to make due with some boilerplate code.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>let mre = mre::mre(
-</span><span class='line'>      // Create a zeromq context that MRE will use to talk to Mongrel2.
-</span><span class='line'>      alt zmq::init(1) {
-</span><span class='line'>          ok(ctx) { ctx }
-</span><span class='line'>          err(e) { fail e.to_str() }
-</span><span class='line'>      },
-</span><span class='line'>
-</span><span class='line'>      // A UUID for this Mongrel2 backend.
-</span><span class='line'>      some("E4B7CE14-E7F7-43EE-A3E6-DB7B0A0C106F"),
-</span><span class='line'>
-</span><span class='line'>      // The addresses to receive requests from.
-</span><span class='line'>      ~["tcp://127.0.0.1:9996"],
-</span><span class='line'>
-</span><span class='line'>      // The addresses to send responses to.
-</span><span class='line'>      ~["tcp://127.0.0.1:9997"],
-</span><span class='line'>
-</span><span class='line'>      // Create our middleware, which preproceses requests and
-</span><span class='line'>      // responses. For now we'll just use the logger.
-</span><span class='line'>      ~[mre::middleware::logger(io::stdout())],
-</span><span class='line'>
-</span><span class='line'>      // A function to create per-request data. This can be used by
-</span><span class='line'>      // middleware like middleware::session to automatically look
-</span><span class='line'>      // up the current user and session data in the database. We don't
-</span><span class='line'>      // need it for this example, so just return a unit value.
-</span><span class='line'>      || ()
-</span><span class='line'>);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Eventually I would like to pull the Mongrel2 settings out into a separate
-config file, so it should get a little more slim in the future. Once we have an
-<code>mre</code> value, we can define some routes.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>do mre.get("^/$") |_req, rep, _m| {
-</span><span class='line'>      rep.reply_html(200u,
-</span><span class='line'>              "&lt;html&gt;\n" +
-</span><span class='line'>              "&lt;body&gt;\n" +
-</span><span class='line'>              "&lt;h1&gt;Hello world!&lt;/h1&gt;\n" + 
-</span><span class='line'>              "&lt;/body&gt;\n" +
-</span><span class='line'>              "&lt;/html&gt;")
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Routes are defined much like Sinatra. You&rsquo;ll find helpers for all the HTTP/1.1
-methods. These method handlers take two arguments. The first is a PCRE regular
-expression, which may have capture clauses, the second a response handler
-closure. Whenever a request comes for a path that accesses this matching
-handler, the closure will be called with a <code>mre::request</code>, <code>mre::response</code>, and
-the regex match object. <code>mre::request</code> values, obviously, contain all the data
-relevant for a given request. Most important the headers and the body.
-<code>mre::response</code> values handle sending responses back to the client.</p>
-
-<p>Finally, we start the MRE event loop, and we&rsquo;re off.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>mre.run();</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>Models</h2>
-
-<p>MRE also comes with a basic database support, built on top of
-<a href="http://elasticsearch.org">Elasticsearch</a>. Sure it&rsquo;s technically a a fulltext
-search engine, but it also works quite well as a JSON object store. Plus,
-there&rsquo;s a <a href="https://github.com/tlrx/transport-zeromq">Zeromq plugin</a>, so it was
-pretty easy to plug it into MRE.  The plugin can be a bit of a pain to set up,
-however, so I wrote up some directions for that
-<a href="https://github.com/erickt/rust-elasticsearch">here</a>.</p>
-
-<p>Let&rsquo;s rewrite our Hello World app to be a bit more interactive. Rather than
-just saying Hello World, let&rsquo;s greet anyone who asks (Source is
-<a href="https://github.com/erickt/mre/blob/master/examples/helloeveryone">here</a>).
-Before we begin with the MRE code, we need to create our Elasticsearch index:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>curl -XPOST "http://localhost:9200/helloeveryone" -d '{
-</span><span class='line'>  "settings": {
-</span><span class='line'>    "index.number_of_shards": 1,
-</span><span class='line'>    "index.number_of_replicas": 0
-</span><span class='line'>  },
-</span><span class='line'>  "mappings": {
-</span><span class='line'>    "person": {
-</span><span class='line'>      "properties": {
-</span><span class='line'>        "timestamp": {"type": "date", "index": "not_analyzed"},
-</span><span class='line'>        "name": {"type": "string", "index": "not_analyzed"}
-</span><span class='line'>      }
-</span><span class='line'>    }
-</span><span class='line'>  }
-</span><span class='line'>}'</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Next, lets make a model of all the people we&rsquo;ll greet. At it&rsquo;s heart, a
-model is just a JSON object with some helper functions. Unfortunately Rust
-still has some ways to go before we can write really clean models. There is no
-support for inheritance or mixin classes, so we need to duplicate some code in
-all the models. Also, our constructors are not that featureful. We don&rsquo;t
-support mulitple constructors, nor is there a way to make a constructor
-private. Fortunately we can hack our way to the API we want.</p>
-
-<p>So enough preamble, lets see this in action. Below is our <code>person</code> model:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>class _person {
-</span><span class='line'>    let model: model;
-</span><span class='line'>
-</span><span class='line'>    new(model: model) {
-</span><span class='line'>        self.model = model;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn id() -&gt; @str {
-</span><span class='line'>        self.model._id
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn timestamp() -&gt; @str {
-</span><span class='line'>        self.model.get_str("timestamp")
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn set_timestamp(timestamp: @str) -&gt; bool {
-</span><span class='line'>        self.model.set_str("timestamp", timestamp)
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn name() -&gt; @str {
-</span><span class='line'>        self.model.get_str("name")
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn set_name(name: @str) -&gt; bool {
-</span><span class='line'>        self.model.set_str("name", name)
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn create() -&gt; result&lt;(), error&gt; {
-</span><span class='line'>        self.model.create()
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn save() -&gt; result&lt;(), error&gt; {
-</span><span class='line'>        self.model.save()
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn delete() {
-</span><span class='line'>        self.model.delete()
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>type person = _person;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>In order to work around not having private constructors, we create a class
-called <code>_person</code>, which is then aliased to <code>person</code>. If we don&rsquo;t export
-<code>_person</code>, then our constructor is effectively hidden.</p>
-
-<p>Next, here&rsquo;s how to create and find the <code>person</code> models:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>// Create a new person model.
-</span><span class='line'>fn person(es: client, name: @str) -&gt; person {
-</span><span class='line'>    // Create a person. We'll store the model in the ES index named
-</span><span class='line'>    // "helloeveryone", under the type "person". We'd like ES to make the index
-</span><span class='line'>    // for us, so we leave the id blank.
-</span><span class='line'>    let person = _person(model(es, @"helloeveryone", @"person", @""));
-</span><span class='line'>
-</span><span class='line'>    person.set_name(name);
-</span><span class='line'>    person.set_timestamp(@time::now().rfc3339());
-</span><span class='line'>
-</span><span class='line'>    person
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>// Return the last 50 people we have said hello to.
-</span><span class='line'>fn last_50(es: client) -&gt; [person] {
-</span><span class='line'>    // This query can be a little complicated for those who have never used
-</span><span class='line'>    // elasticsearch. All it says is that we want to fetch 50 documents on the
-</span><span class='line'>    // index "helloeveryone" and the type "person", sorted by time.
-</span><span class='line'>    do model::search(es) |bld| {
-</span><span class='line'>        bld
-</span><span class='line'>            .set_indices(~["helloeveryone"])
-</span><span class='line'>            .set_types(~["person"])
-</span><span class='line'>            .set_source(*json_dict_builder()
-</span><span class='line'>                .insert("size", 50.0)
-</span><span class='line'>                .insert_list("sort", |bld|
-</span><span class='line'>                    bld.push_dict(|bld|
-</span><span class='line'>                        bld.insert("timestamp", "desc");
-</span><span class='line'>                    });
-</span><span class='line'>                })
-</span><span class='line'>            );
-</span><span class='line'>    }.map(|model|
-</span><span class='line'>        // Construct a person model from the raw model data.
-</span><span class='line'>        _person(model)
-</span><span class='line'>    )
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Here, since <code>person</code> is just a type alias, we can also create a function called
-<code>person</code>. The underlying <code>_person</code> constructor then can be shared with
-multiple functions, which lets us simulate having multiple constructors. So,
-the users of the model have a clean api, which is exactly what we want.</p>
-
-<p>We&rsquo;re almost done, so lets finish up and tie everything together in our <code>main</code>:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>fn main() {
-</span><span class='line'>    // Create a zeromq context that MRE will use to talk to Mongrel2 and
-</span><span class='line'>    // Elasticsearch.
-</span><span class='line'>    let zmq = alt zmq::init(1) {
-</span><span class='line'>        ok(ctx) { ctx }
-</span><span class='line'>        err(e) { fail e.to_str() }
-</span><span class='line'>    };
-</span><span class='line'>
-</span><span class='line'>    let mre = mre::mre(zmq, ...);
-</span><span class='line'>
-</span><span class='line'>    // Connect to Elasticsearch, which we'll use as our database.
-</span><span class='line'>    let es = elasticsearch::connect_with_zmq(zmq, "tcp://localhost:9700");
-</span><span class='line'>
-</span><span class='line'>    // Show who we'll say hello to.
-</span><span class='line'>    do mre.get("^/$") |_req, rep, _m| {
-</span><span class='line'>        // Fetch the people we've greeted.
-</span><span class='line'>        let people = person::last_50(es);
-</span><span class='line'>
-</span><span class='line'>        // We want to render out our responses using mustache, so we need
-</span><span class='line'>        // to convert our model over to something mustache can handle.
-</span><span class='line'>        let template = mustache::render_file("index", hash_from_strs(~[
-</span><span class='line'>            ("names", do people.map |person| {
-</span><span class='line'>                hash_from_strs(~[
-</span><span class='line'>                    ("name", person.name())
-</span><span class='line'>                ])
-</span><span class='line'>            }.to_mustache())
-</span><span class='line'>        ]));
-</span><span class='line'>               
-</span><span class='line'>        rep.reply_html(200u, template)
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    // Add a new person to greet.
-</span><span class='line'>    do mre.post("^/$") |req, rep, _m| {
-</span><span class='line'>        // Parse the form data.
-</span><span class='line'>        let form = uri::decode_form_urlencoded(*req.body());
-</span><span class='line'>
-</span><span class='line'>        alt form.find("name") {
-</span><span class='line'>          none {
-</span><span class='line'>            rep.reply_http(400u, "missing name");
-</span><span class='line'>          }
-</span><span class='line'>          some(names) {
-</span><span class='line'>            // Create and save our person. If successful, redirect back to
-</span><span class='line'>            // the front page.
-</span><span class='line'>            let person = person::person(es, (*names)[0u]);
-</span><span class='line'>
-</span><span class='line'>            alt person.create() {
-</span><span class='line'>              ok(()) { rep.reply_redirect("/") }
-</span><span class='line'>              err(e) {
-</span><span class='line'>                // Uh oh, something bad happened. Let's just display the
-</span><span class='line'>                // error back to the user for now.
-</span><span class='line'>                rep.reply_http(500u, e.msg)
-</span><span class='line'>              }
-</span><span class='line'>            }
-</span><span class='line'>          }
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    // Finally, start the MRE event loop.
-</span><span class='line'>    mre.run();
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>Middleware</h2>
-
-<p>As you probably saw in the <code>mre::mre</code> constructor, MRE has some basic
-support for middleware. Creating middleware is pretty easy. It&rsquo;s just a
-function that matches this interface (That type variable matches the return
-type for the closure passed in to <code>mre::mre</code>):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>type middleware&lt;T&gt; = fn@(@request&lt;T&gt;, @response) -&gt; bool;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Middleware gets called on each request in order, and is able to
-read the request and it&rsquo;s headers, and modify the response hooks. Here&rsquo;s
-<code>mre::middleware::logger</code>, to show how it works:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>fn logger&lt;T: copy&gt;(logger: io::writer) -&gt; middleware&lt;T&gt; {
-</span><span class='line'>    |req: @request&lt;T&gt;, rep: @response| {
-</span><span class='line'>        let old_end = rep.end;
-</span><span class='line'>        rep.end = || {
-</span><span class='line'>            let address = alt req.find_header("x-forwarded-for") {
-</span><span class='line'>              none { @"-" }
-</span><span class='line'>              some(address) { address }
-</span><span class='line'>            };
-</span><span class='line'>
-</span><span class='line'>            let method = alt req.find_header("METHOD") {
-</span><span class='line'>              none { @"-" }
-</span><span class='line'>              some(method) { method }
-</span><span class='line'>            };
-</span><span class='line'>
-</span><span class='line'>            let len = alt rep.find_header("Content-Length") {
-</span><span class='line'>              none { @"-" }
-</span><span class='line'>              some(len) { len }
-</span><span class='line'>            };
-</span><span class='line'>
-</span><span class='line'>            logger.write_line(#fmt("%s - %s [%s] \"%s %s\" %u %s",
-</span><span class='line'>                *address,
-</span><span class='line'>                "-",
-</span><span class='line'>                time::now().strftime("%d/%m/%Y:%H:%M:%S %z"),
-</span><span class='line'>                *method,
-</span><span class='line'>                *req.path(),
-</span><span class='line'>                rep.code,
-</span><span class='line'>                *len));
-</span><span class='line'>
-</span><span class='line'>            old_end();
-</span><span class='line'>        };
-</span><span class='line'>
-</span><span class='line'>        true
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>MRE also includes a <code>mre::middleware::session</code> middleware, which implements a
-traditional cookie-based session authentication scheme. This one is
-unfortunately a little more complicated to use. Starting off, you need to
-create a new datatype to store the session data and give a constructor to <code>mre</code>
-on how to make this per-request data:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>type data = @{
-</span><span class='line'>    mut session: option&lt;mre::session::session&gt;,
-</span><span class='line'>    mut user: option&lt;mre::user::user&gt;,
-</span><span class='line'>};
-</span><span class='line'>
-</span><span class='line'>let middleware = ~[
-</span><span class='line'>      mre::middleware::logger(io::stdout()),
-</span><span class='line'>      mre::middleware::session(es,
-</span><span class='line'>              @"blog",
-</span><span class='line'>              @"blog",
-</span><span class='line'>              @"session",
-</span><span class='line'>              |req: @request&lt;data&gt;, session, user| {
-</span><span class='line'>                      req.data.session = some(session);
-</span><span class='line'>                      req.data.user = some(user);
-</span><span class='line'>              }
-</span><span class='line'>      )
-</span><span class='line'>];
-</span><span class='line'>
-</span><span class='line'>let mre = mre::mre(zmq,
-</span><span class='line'>      some("F0D32575-2ABB-4957-BC8B-12DAC8AFF13A"),
-</span><span class='line'>      ~["tcp://127.0.0.1:9998"],
-</span><span class='line'>      ~["tcp://127.0.0.1:9999"],
-</span><span class='line'>      middleware,
-</span><span class='line'>      || @{ mut session: none, mut user: none }
-</span><span class='line'>);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Then you access this data through the <code>request.data</code> member:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>do app.post("^/$") |req, rep, _m| {
-</span><span class='line'>    let id = alt req.user {
-</span><span class='line'>      none { @"world" }
-</span><span class='line'>      some(user) { user.id() }
-</span><span class='line'>    };
-</span><span class='line'>
-</span><span class='line'>      rep.reply_html(200u,
-</span><span class='line'>              "&lt;html&gt;\n" +
-</span><span class='line'>        "&lt;body&gt;\n" +
-</span><span class='line'>        "&lt;h1&gt;Hello " + *id + "!&lt;/h1&gt;\n" + 
-</span><span class='line'>        "&lt;/body&gt;\n" +
-</span><span class='line'>        "&lt;/html&gt;")
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>See the <a href="https://github.com/erickt/mre/tree/master/examples/blog">blog</a> for a
-complete example.</p>
 ]]></content>
   </entry>
   

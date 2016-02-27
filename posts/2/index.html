@@ -9,11 +9,12 @@
   <meta name="author" content="Erick Tryzelaar">
 
   
-  <meta name="description" content="There&rsquo;s been a long digression over the past month
-(possible kernel bugs,
-benchmarking Writers,
-and
-don&rsquo;t believe in magic, folks), but I &hellip;">
+  <meta name="description" content="Wow, home stretch! Here&rsquo;s the rest of the series if you want to catch up:
+part 1,
+part 2,
+part 2.1,
+part 2.2, and
+part 3. Overall serde&rsquo;s &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -81,6 +82,380 @@ don&rsquo;t believe in magic, folks), but I &hellip;">
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/12/13/performance-digression/">Rewriting Rust Serialization, Part 3.1: Another Performance Digression</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-12-13T18:35:08-08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>13</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>6:35 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>Wow, home stretch! Here&rsquo;s the rest of the series if you want to catch up:
+<a href="http://erickt.github.io/blog/2014/10/28/serialization/">part 1</a>,
+<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2</a>,
+<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2.1</a>,
+<a href="http://erickt.github.io/blog/2014/11/03/performance/">part 2.2</a>, and
+<a href="http://erickt.github.io/blog/2014/12/13/rewriting-rust-serialization/">part 3</a>.</p>
+
+<p>Overall <code>serde</code>&rsquo;s approach for serialization works out pretty well. One thing I
+forgot to include in the last post was that I also have two benchmarks that are
+not using <code>serde</code>, but are just safely reading and writing values.  Assuming I
+haven&rsquo;t missed anything, they should be the upper limit in performance we can
+get out of any serialization framework: Here&rsquo;s
+<a href="https://github.com/erickt/rust-serde/blob/master/benches/bench_log.rs#L1021">serialization</a>:</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library                        </th>
+<th> serialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> <strong>rust</strong> </td>
+<td> <strong>max without string escapes</strong> </td>
+<td> <strong>353</strong>              </td>
+</tr>
+<tr>
+<td> c++      </td>
+<td> rapidjson                      </td>
+<td> 304                  </td>
+</tr>
+<tr>
+<td> <strong>rust</strong> </td>
+<td> <strong>max with string escape</strong>     </td>
+<td> <strong>234</strong>              </td>
+</tr>
+<tr>
+<td> rust     </td>
+<td> serde::json                    </td>
+<td> 201                  </td>
+</tr>
+<tr>
+<td> rust     </td>
+<td> serialize::json                </td>
+<td> 147                  </td>
+</tr>
+<tr>
+<td> go       </td>
+<td> ffjson                         </td>
+<td> 147                  </td>
+</tr>
+</tbody>
+</table>
+
+
+<p>So beyond optimizing string escaping, <code>serde::json</code> is only 14% slower than the
+zero-cost version and 34% slower than <code>rapidjson</code>.</p>
+
+<p><a href="https://github.com/erickt/rust-serde/blob/master/benches/bench_log.rs#L1613">Deserialization</a>,
+on the other hand, still has a ways to go:</p>
+
+<table>
+<thead>
+<tr>
+<th> language </th>
+<th> library                         </th>
+<th> deserialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> rust     </td>
+<td> rapidjson (SAX)                 </td>
+<td> 189                    </td>
+</tr>
+<tr>
+<td> c++      </td>
+<td> rapidjson (DOM)                 </td>
+<td> 162                    </td>
+</tr>
+<tr>
+<td> <strong>rust</strong> </td>
+<td> <strong>max with Iterator&lt;u8&gt;</strong> </td>
+<td> <strong>152</strong>                </td>
+</tr>
+<tr>
+<td> go       </td>
+<td> ffjson                          </td>
+<td> 95                     </td>
+</tr>
+<tr>
+<td> <strong>rust</strong> </td>
+<td> <strong>max with Reader</strong>             </td>
+<td> <strong>78</strong>                 </td>
+</tr>
+<tr>
+<td> rust     </td>
+<td> serde::json                     </td>
+<td> 73                     </td>
+</tr>
+<tr>
+<td> rust     </td>
+<td> serialize::json                 </td>
+<td> 24                     </td>
+</tr>
+</tbody>
+</table>
+
+
+<p>There are a couple interesting things here:</p>
+
+<p>First, <code>serde::json</code> is built upon consuming from an <code>Iterator&lt;u8&gt;</code>, so we&rsquo;re
+48% slower than our theoretical max, and 58% slower than <code>rapidjson</code>. It looks
+like tagged tokens, while faster than the closures in <code>libserialize</code>, are still
+pretty expensive.</p>
+
+<p>Second, <code>ffjson</code> is beating us and they compile dramatically faster too. The
+<a href="https://github.com/cloudflare/goser">goser</a> test suite takes about 0.54
+seconds to compile, whereas mine takes about 30 seconds at <code>--opt-level=3</code>
+(!!). Rust itself is only taking 1.5 seconds, the rest is spent in LLVM. With
+no optimization, it compiles &ldquo;only&rdquo; in 5.6 seconds, and is 96% slower.</p>
+
+<p>Third, <code>Reader</code> is a surprisingly expensive trait when dealing with a format
+like JSON that need to read a byte at a time. It turns out we&rsquo;re not
+<a href="https://github.com/rust-lang/rust/issues/19864">generating great code</a> for
+types with padding. aatch has been working on fixing this though.</p>
+
+<hr />
+
+<p>Since I wrote that last section, I did a little more experimentation to try to
+figure out why our serialization upper bound is 23% slower than rapidjson. And,
+well, maybe I found it?</p>
+
+<table>
+<thead>
+<tr>
+<th>                                </th>
+<th> serialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> serde::json with a MyMemWriter </td>
+<td> 346                  </td>
+</tr>
+<tr>
+<td> serde::json with a Vec<u8>     </td>
+<td> 247                  </td>
+</tr>
+</tbody>
+</table>
+
+
+<p>All I did with <code>MyMemWriter</code> is copy the <code>Vec::&lt;u8&gt;</code> implementation of <code>Writer</code>
+into the local codebase:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">struct</span> <span class="n">MyMemWriter0</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">buf</span><span class="o">:</span> <span class="n">Vec</span><span class="o">&lt;</span><span class="kt">u8</span><span class="o">&gt;</span><span class="p">,</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span> <span class="n">MyMemWriter0</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">pub</span> <span class="k">fn</span> <span class="n">with_capacity</span><span class="p">(</span><span class="n">cap</span><span class="o">:</span> <span class="kt">uint</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MyMemWriter0</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">MyMemWriter0</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">buf</span><span class="o">:</span> <span class="n">Vec</span><span class="o">::</span><span class="n">with_capacity</span><span class="p">(</span><span class="n">cap</span><span class="p">)</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">impl</span> <span class="nb">Writer</span> <span class="k">for</span> <span class="n">MyMemWriter0</span> <span class="p">{</span>
+</span><span class='line'>    <span class="cp">#[inline]</span>
+</span><span class='line'>    <span class="k">fn</span> <span class="n">write</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="bp">self</span><span class="p">,</span> <span class="n">buf</span><span class="o">:</span> <span class="o">&amp;</span><span class="p">[</span><span class="kt">u8</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">io</span><span class="o">::</span><span class="n">IoResult</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>        <span class="bp">self</span><span class="p">.</span><span class="n">buf</span><span class="p">.</span><span class="n">push_all</span><span class="p">(</span><span class="n">buf</span><span class="p">);</span>
+</span><span class='line'>        <span class="nb">Ok</span><span class="p">(())</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#[bench]</span>
+</span><span class='line'><span class="k">fn</span> <span class="n">bench_serializer_my_mem_writer0</span><span class="p">(</span><span class="n">b</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">Bencher</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">log</span> <span class="o">=</span> <span class="n">Log</span><span class="o">::</span><span class="n">new</span><span class="p">();</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">json</span> <span class="o">=</span> <span class="n">json</span><span class="o">::</span><span class="n">to_vec</span><span class="p">(</span><span class="o">&amp;</span><span class="n">log</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">b</span><span class="p">.</span><span class="n">bytes</span> <span class="o">=</span> <span class="n">json</span><span class="p">.</span><span class="n">len</span><span class="p">()</span> <span class="k">as</span> <span class="kt">u64</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">let</span> <span class="k">mut</span> <span class="n">wr</span> <span class="o">=</span> <span class="n">MyMemWriter0</span><span class="o">::</span><span class="n">with_capacity</span><span class="p">(</span><span class="mi">1024</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">b</span><span class="p">.</span><span class="n">iter</span><span class="p">(</span><span class="o">||</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">wr</span><span class="p">.</span><span class="n">buf</span><span class="p">.</span><span class="n">clear</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="k">mut</span> <span class="n">serializer</span> <span class="o">=</span> <span class="n">json</span><span class="o">::</span><span class="n">Serializer</span><span class="o">::</span><span class="n">new</span><span class="p">(</span><span class="n">wr</span><span class="p">.</span><span class="n">by_ref</span><span class="p">());</span>
+</span><span class='line'>        <span class="n">log</span><span class="p">.</span><span class="n">serialize</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">serializer</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">_json</span> <span class="o">=</span> <span class="n">serializer</span><span class="p">.</span><span class="n">unwrap</span><span class="p">();</span>
+</span><span class='line'>    <span class="p">});</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#[bench]</span>
+</span><span class='line'><span class="k">fn</span> <span class="n">bench_serializer_vec</span><span class="p">(</span><span class="n">b</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">Bencher</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">log</span> <span class="o">=</span> <span class="n">Log</span><span class="o">::</span><span class="n">new</span><span class="p">();</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">json</span> <span class="o">=</span> <span class="n">json</span><span class="o">::</span><span class="n">to_vec</span><span class="p">(</span><span class="o">&amp;</span><span class="n">log</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">b</span><span class="p">.</span><span class="n">bytes</span> <span class="o">=</span> <span class="n">json</span><span class="p">.</span><span class="n">len</span><span class="p">()</span> <span class="k">as</span> <span class="kt">u64</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">let</span> <span class="k">mut</span> <span class="n">wr</span> <span class="o">=</span> <span class="n">Vec</span><span class="o">::</span><span class="n">with_capacity</span><span class="p">(</span><span class="mi">1024</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">b</span><span class="p">.</span><span class="n">iter</span><span class="p">(</span><span class="o">||</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">wr</span><span class="p">.</span><span class="n">clear</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="k">mut</span> <span class="n">serializer</span> <span class="o">=</span> <span class="n">json</span><span class="o">::</span><span class="n">Serializer</span><span class="o">::</span><span class="n">new</span><span class="p">(</span><span class="n">wr</span><span class="p">.</span><span class="n">by_ref</span><span class="p">());</span>
+</span><span class='line'>        <span class="n">log</span><span class="p">.</span><span class="n">serialize</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">serializer</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">_json</span> <span class="o">=</span> <span class="n">serializer</span><span class="p">.</span><span class="n">unwrap</span><span class="p">();</span>
+</span><span class='line'>    <span class="p">});</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Somehow it&rsquo;s not enough to just mark <code>Vec::write</code> as
+<code>#[inline]</code>, having it in the same file gave LLVM enough information to
+optimize it&rsquo;s overhead away. Even using <code>#[inline(always)]</code> on <code>Vec::write</code> and
+<code>Vec::push_all</code> isn&rsquo;t able to get the same increase, so I&rsquo;m not sure how to
+replicate this in the general case.</p>
+
+<p>Also interesting is <code>bench_serializer_slice</code>, which uses <code>BufWriter</code>.</p>
+
+<table>
+<thead>
+<tr>
+<th>                                </th>
+<th> serialization (MB/s) </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> serde::json with a BufWriter   </td>
+<td> 342                  </td>
+</tr>
+</tbody>
+</table>
+
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="cp">#[bench]</span>
+</span><span class='line'><span class="k">fn</span> <span class="n">bench_serializer_slice</span><span class="p">(</span><span class="n">b</span><span class="o">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">Bencher</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">log</span> <span class="o">=</span> <span class="n">Log</span><span class="o">::</span><span class="n">new</span><span class="p">();</span>
+</span><span class='line'>    <span class="kd">let</span> <span class="n">json</span> <span class="o">=</span> <span class="n">json</span><span class="o">::</span><span class="n">to_vec</span><span class="p">(</span><span class="o">&amp;</span><span class="n">log</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">b</span><span class="p">.</span><span class="n">bytes</span> <span class="o">=</span> <span class="n">json</span><span class="p">.</span><span class="n">len</span><span class="p">()</span> <span class="k">as</span> <span class="kt">u64</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">let</span> <span class="k">mut</span> <span class="n">buf</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="p">..</span> <span class="mi">1024</span><span class="p">];</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">b</span><span class="p">.</span><span class="n">iter</span><span class="p">(</span><span class="o">||</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">for</span> <span class="n">item</span> <span class="k">in</span> <span class="n">buf</span><span class="p">.</span><span class="n">iter_mut</span><span class="p">(){</span> <span class="o">*</span><span class="n">item</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="p">}</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="k">mut</span> <span class="n">wr</span> <span class="o">=</span> <span class="n">std</span><span class="o">::</span><span class="n">io</span><span class="o">::</span><span class="n">BufWriter</span><span class="o">::</span><span class="n">new</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">buf</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">let</span> <span class="k">mut</span> <span class="n">serializer</span> <span class="o">=</span> <span class="n">json</span><span class="o">::</span><span class="n">Serializer</span><span class="o">::</span><span class="n">new</span><span class="p">(</span><span class="n">wr</span><span class="p">.</span><span class="n">by_ref</span><span class="p">());</span>
+</span><span class='line'>        <span class="n">log</span><span class="p">.</span><span class="n">serialize</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">serializer</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span>
+</span><span class='line'>        <span class="kd">let</span> <span class="n">_json</span> <span class="o">=</span> <span class="n">serializer</span><span class="p">.</span><span class="n">unwrap</span><span class="p">();</span>
+</span><span class='line'>    <span class="p">});</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<hr />
+
+<p>Another digression. Since I wrote the above, aatch has put out some PRs that
+should help speed up enums.
+<a href="https://github.com/rust-lang/rust/pull/19898">19898</a> and
+<a href="https://github.com/rust-lang/rust/pull/20060">#20060</a> and was able to optimize
+the padding out of enums and fix an issue with returns generating bad code. In
+my <a href="https://github.com/rust-lang/rust/issues/19864">bug from earlier</a>
+his patches were able to speed up my benchmark returning an
+<code>Result&lt;(), IoError&gt;</code> from running at 40MB/s to 88MB/s. However, if we&rsquo;re able
+to reduce <code>IoError</code> down to a word, we get the performance up to 730MB/s! We
+also might get enum compression, so a type like <code>Result&lt;(), IoError&gt;</code> then
+would speed up to 1200MB/s! I think going in this direction is going to really
+help speed things up.</p>
+
+<hr />
+
+<p>That was taking a while, so until next time!</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -5219,670 +5594,9 @@ to need some compiler help before these performance issues get solved.</p>
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2012/07/05/meal-ready-to-eat-a-web-framework-for-rust/">Meal, Ready-to-Eat: A Web Framework for Rust</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2012-07-05T08:55:00-07:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>5</span><span class='date-suffix'>th</span>, <span class='date-year'>2012</span></span> <span class='time'>8:55 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>I&rsquo;ve been putting this off for far too long. For the last three months I&rsquo;ve
-been working on <a href="https://github.com/erickt/mre">Meal, Ready-to-Eat</a>, a web
-framework for the <a href="http://rust-lang.org">Rust programming language</a>. I call it
-MRE. Rust didn&rsquo;t have a TCP stack when I started the project, so instead I
-built MRE on top of <a href="http://mongrel2.org">Mongrel2</a>. It talks
-<a href="http://zeromq.org">Zeromq</a>, so I could get something up pretty quickly. It&rsquo;s
-inspired by <a href="http://www.sinatrarb.com/">Sinatra</a> and
-<a href="http://expressjs.com/">Express.js</a>.  So take all this code with a grain of
-salt. The design is very much in flux and there are some pretty rough edges.
-Better to release early and get feedback though, right?</p>
-
-<p>One word of warning though. Rust&rsquo;s syntax and semantics are still in flux, so
-it&rsquo;s quite possible this blog post will be out of date by the time you read it.</p>
-
-<h2>Hello World</h2>
-
-<p>Let&rsquo;s start with the classic Hello World app. You can find the full example
-<a href="https://github.com/erickt/mre/blob/master/examples/helloworld/helloworld.rs">here</a>.
-This example is a little more verbose than frameworks like Sinatra and Express,
-and not just because Rust is statically typed. Those other frameworks take
-advantage of global variables and static initializers, but Rust doesn&rsquo;t, so we
-have to make due with some boilerplate code.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>let mre = mre::mre(
-</span><span class='line'>      // Create a zeromq context that MRE will use to talk to Mongrel2.
-</span><span class='line'>      alt zmq::init(1) {
-</span><span class='line'>          ok(ctx) { ctx }
-</span><span class='line'>          err(e) { fail e.to_str() }
-</span><span class='line'>      },
-</span><span class='line'>
-</span><span class='line'>      // A UUID for this Mongrel2 backend.
-</span><span class='line'>      some("E4B7CE14-E7F7-43EE-A3E6-DB7B0A0C106F"),
-</span><span class='line'>
-</span><span class='line'>      // The addresses to receive requests from.
-</span><span class='line'>      ~["tcp://127.0.0.1:9996"],
-</span><span class='line'>
-</span><span class='line'>      // The addresses to send responses to.
-</span><span class='line'>      ~["tcp://127.0.0.1:9997"],
-</span><span class='line'>
-</span><span class='line'>      // Create our middleware, which preproceses requests and
-</span><span class='line'>      // responses. For now we'll just use the logger.
-</span><span class='line'>      ~[mre::middleware::logger(io::stdout())],
-</span><span class='line'>
-</span><span class='line'>      // A function to create per-request data. This can be used by
-</span><span class='line'>      // middleware like middleware::session to automatically look
-</span><span class='line'>      // up the current user and session data in the database. We don't
-</span><span class='line'>      // need it for this example, so just return a unit value.
-</span><span class='line'>      || ()
-</span><span class='line'>);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Eventually I would like to pull the Mongrel2 settings out into a separate
-config file, so it should get a little more slim in the future. Once we have an
-<code>mre</code> value, we can define some routes.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>do mre.get("^/$") |_req, rep, _m| {
-</span><span class='line'>      rep.reply_html(200u,
-</span><span class='line'>              "&lt;html&gt;\n" +
-</span><span class='line'>              "&lt;body&gt;\n" +
-</span><span class='line'>              "&lt;h1&gt;Hello world!&lt;/h1&gt;\n" + 
-</span><span class='line'>              "&lt;/body&gt;\n" +
-</span><span class='line'>              "&lt;/html&gt;")
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Routes are defined much like Sinatra. You&rsquo;ll find helpers for all the HTTP/1.1
-methods. These method handlers take two arguments. The first is a PCRE regular
-expression, which may have capture clauses, the second a response handler
-closure. Whenever a request comes for a path that accesses this matching
-handler, the closure will be called with a <code>mre::request</code>, <code>mre::response</code>, and
-the regex match object. <code>mre::request</code> values, obviously, contain all the data
-relevant for a given request. Most important the headers and the body.
-<code>mre::response</code> values handle sending responses back to the client.</p>
-
-<p>Finally, we start the MRE event loop, and we&rsquo;re off.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>mre.run();</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>Models</h2>
-
-<p>MRE also comes with a basic database support, built on top of
-<a href="http://elasticsearch.org">Elasticsearch</a>. Sure it&rsquo;s technically a a fulltext
-search engine, but it also works quite well as a JSON object store. Plus,
-there&rsquo;s a <a href="https://github.com/tlrx/transport-zeromq">Zeromq plugin</a>, so it was
-pretty easy to plug it into MRE.  The plugin can be a bit of a pain to set up,
-however, so I wrote up some directions for that
-<a href="https://github.com/erickt/rust-elasticsearch">here</a>.</p>
-
-<p>Let&rsquo;s rewrite our Hello World app to be a bit more interactive. Rather than
-just saying Hello World, let&rsquo;s greet anyone who asks (Source is
-<a href="https://github.com/erickt/mre/blob/master/examples/helloeveryone">here</a>).
-Before we begin with the MRE code, we need to create our Elasticsearch index:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>curl -XPOST "http://localhost:9200/helloeveryone" -d '{
-</span><span class='line'>  "settings": {
-</span><span class='line'>    "index.number_of_shards": 1,
-</span><span class='line'>    "index.number_of_replicas": 0
-</span><span class='line'>  },
-</span><span class='line'>  "mappings": {
-</span><span class='line'>    "person": {
-</span><span class='line'>      "properties": {
-</span><span class='line'>        "timestamp": {"type": "date", "index": "not_analyzed"},
-</span><span class='line'>        "name": {"type": "string", "index": "not_analyzed"}
-</span><span class='line'>      }
-</span><span class='line'>    }
-</span><span class='line'>  }
-</span><span class='line'>}'</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Next, lets make a model of all the people we&rsquo;ll greet. At it&rsquo;s heart, a
-model is just a JSON object with some helper functions. Unfortunately Rust
-still has some ways to go before we can write really clean models. There is no
-support for inheritance or mixin classes, so we need to duplicate some code in
-all the models. Also, our constructors are not that featureful. We don&rsquo;t
-support mulitple constructors, nor is there a way to make a constructor
-private. Fortunately we can hack our way to the API we want.</p>
-
-<p>So enough preamble, lets see this in action. Below is our <code>person</code> model:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>class _person {
-</span><span class='line'>    let model: model;
-</span><span class='line'>
-</span><span class='line'>    new(model: model) {
-</span><span class='line'>        self.model = model;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn id() -&gt; @str {
-</span><span class='line'>        self.model._id
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn timestamp() -&gt; @str {
-</span><span class='line'>        self.model.get_str("timestamp")
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn set_timestamp(timestamp: @str) -&gt; bool {
-</span><span class='line'>        self.model.set_str("timestamp", timestamp)
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn name() -&gt; @str {
-</span><span class='line'>        self.model.get_str("name")
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn set_name(name: @str) -&gt; bool {
-</span><span class='line'>        self.model.set_str("name", name)
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn create() -&gt; result&lt;(), error&gt; {
-</span><span class='line'>        self.model.create()
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn save() -&gt; result&lt;(), error&gt; {
-</span><span class='line'>        self.model.save()
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    fn delete() {
-</span><span class='line'>        self.model.delete()
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>type person = _person;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>In order to work around not having private constructors, we create a class
-called <code>_person</code>, which is then aliased to <code>person</code>. If we don&rsquo;t export
-<code>_person</code>, then our constructor is effectively hidden.</p>
-
-<p>Next, here&rsquo;s how to create and find the <code>person</code> models:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>// Create a new person model.
-</span><span class='line'>fn person(es: client, name: @str) -&gt; person {
-</span><span class='line'>    // Create a person. We'll store the model in the ES index named
-</span><span class='line'>    // "helloeveryone", under the type "person". We'd like ES to make the index
-</span><span class='line'>    // for us, so we leave the id blank.
-</span><span class='line'>    let person = _person(model(es, @"helloeveryone", @"person", @""));
-</span><span class='line'>
-</span><span class='line'>    person.set_name(name);
-</span><span class='line'>    person.set_timestamp(@time::now().rfc3339());
-</span><span class='line'>
-</span><span class='line'>    person
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>// Return the last 50 people we have said hello to.
-</span><span class='line'>fn last_50(es: client) -&gt; [person] {
-</span><span class='line'>    // This query can be a little complicated for those who have never used
-</span><span class='line'>    // elasticsearch. All it says is that we want to fetch 50 documents on the
-</span><span class='line'>    // index "helloeveryone" and the type "person", sorted by time.
-</span><span class='line'>    do model::search(es) |bld| {
-</span><span class='line'>        bld
-</span><span class='line'>            .set_indices(~["helloeveryone"])
-</span><span class='line'>            .set_types(~["person"])
-</span><span class='line'>            .set_source(*json_dict_builder()
-</span><span class='line'>                .insert("size", 50.0)
-</span><span class='line'>                .insert_list("sort", |bld|
-</span><span class='line'>                    bld.push_dict(|bld|
-</span><span class='line'>                        bld.insert("timestamp", "desc");
-</span><span class='line'>                    });
-</span><span class='line'>                })
-</span><span class='line'>            );
-</span><span class='line'>    }.map(|model|
-</span><span class='line'>        // Construct a person model from the raw model data.
-</span><span class='line'>        _person(model)
-</span><span class='line'>    )
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Here, since <code>person</code> is just a type alias, we can also create a function called
-<code>person</code>. The underlying <code>_person</code> constructor then can be shared with
-multiple functions, which lets us simulate having multiple constructors. So,
-the users of the model have a clean api, which is exactly what we want.</p>
-
-<p>We&rsquo;re almost done, so lets finish up and tie everything together in our <code>main</code>:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>fn main() {
-</span><span class='line'>    // Create a zeromq context that MRE will use to talk to Mongrel2 and
-</span><span class='line'>    // Elasticsearch.
-</span><span class='line'>    let zmq = alt zmq::init(1) {
-</span><span class='line'>        ok(ctx) { ctx }
-</span><span class='line'>        err(e) { fail e.to_str() }
-</span><span class='line'>    };
-</span><span class='line'>
-</span><span class='line'>    let mre = mre::mre(zmq, ...);
-</span><span class='line'>
-</span><span class='line'>    // Connect to Elasticsearch, which we'll use as our database.
-</span><span class='line'>    let es = elasticsearch::connect_with_zmq(zmq, "tcp://localhost:9700");
-</span><span class='line'>
-</span><span class='line'>    // Show who we'll say hello to.
-</span><span class='line'>    do mre.get("^/$") |_req, rep, _m| {
-</span><span class='line'>        // Fetch the people we've greeted.
-</span><span class='line'>        let people = person::last_50(es);
-</span><span class='line'>
-</span><span class='line'>        // We want to render out our responses using mustache, so we need
-</span><span class='line'>        // to convert our model over to something mustache can handle.
-</span><span class='line'>        let template = mustache::render_file("index", hash_from_strs(~[
-</span><span class='line'>            ("names", do people.map |person| {
-</span><span class='line'>                hash_from_strs(~[
-</span><span class='line'>                    ("name", person.name())
-</span><span class='line'>                ])
-</span><span class='line'>            }.to_mustache())
-</span><span class='line'>        ]));
-</span><span class='line'>               
-</span><span class='line'>        rep.reply_html(200u, template)
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    // Add a new person to greet.
-</span><span class='line'>    do mre.post("^/$") |req, rep, _m| {
-</span><span class='line'>        // Parse the form data.
-</span><span class='line'>        let form = uri::decode_form_urlencoded(*req.body());
-</span><span class='line'>
-</span><span class='line'>        alt form.find("name") {
-</span><span class='line'>          none {
-</span><span class='line'>            rep.reply_http(400u, "missing name");
-</span><span class='line'>          }
-</span><span class='line'>          some(names) {
-</span><span class='line'>            // Create and save our person. If successful, redirect back to
-</span><span class='line'>            // the front page.
-</span><span class='line'>            let person = person::person(es, (*names)[0u]);
-</span><span class='line'>
-</span><span class='line'>            alt person.create() {
-</span><span class='line'>              ok(()) { rep.reply_redirect("/") }
-</span><span class='line'>              err(e) {
-</span><span class='line'>                // Uh oh, something bad happened. Let's just display the
-</span><span class='line'>                // error back to the user for now.
-</span><span class='line'>                rep.reply_http(500u, e.msg)
-</span><span class='line'>              }
-</span><span class='line'>            }
-</span><span class='line'>          }
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    // Finally, start the MRE event loop.
-</span><span class='line'>    mre.run();
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>Middleware</h2>
-
-<p>As you probably saw in the <code>mre::mre</code> constructor, MRE has some basic
-support for middleware. Creating middleware is pretty easy. It&rsquo;s just a
-function that matches this interface (That type variable matches the return
-type for the closure passed in to <code>mre::mre</code>):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>type middleware&lt;T&gt; = fn@(@request&lt;T&gt;, @response) -&gt; bool;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Middleware gets called on each request in order, and is able to
-read the request and it&rsquo;s headers, and modify the response hooks. Here&rsquo;s
-<code>mre::middleware::logger</code>, to show how it works:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>fn logger&lt;T: copy&gt;(logger: io::writer) -&gt; middleware&lt;T&gt; {
-</span><span class='line'>    |req: @request&lt;T&gt;, rep: @response| {
-</span><span class='line'>        let old_end = rep.end;
-</span><span class='line'>        rep.end = || {
-</span><span class='line'>            let address = alt req.find_header("x-forwarded-for") {
-</span><span class='line'>              none { @"-" }
-</span><span class='line'>              some(address) { address }
-</span><span class='line'>            };
-</span><span class='line'>
-</span><span class='line'>            let method = alt req.find_header("METHOD") {
-</span><span class='line'>              none { @"-" }
-</span><span class='line'>              some(method) { method }
-</span><span class='line'>            };
-</span><span class='line'>
-</span><span class='line'>            let len = alt rep.find_header("Content-Length") {
-</span><span class='line'>              none { @"-" }
-</span><span class='line'>              some(len) { len }
-</span><span class='line'>            };
-</span><span class='line'>
-</span><span class='line'>            logger.write_line(#fmt("%s - %s [%s] \"%s %s\" %u %s",
-</span><span class='line'>                *address,
-</span><span class='line'>                "-",
-</span><span class='line'>                time::now().strftime("%d/%m/%Y:%H:%M:%S %z"),
-</span><span class='line'>                *method,
-</span><span class='line'>                *req.path(),
-</span><span class='line'>                rep.code,
-</span><span class='line'>                *len));
-</span><span class='line'>
-</span><span class='line'>            old_end();
-</span><span class='line'>        };
-</span><span class='line'>
-</span><span class='line'>        true
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>MRE also includes a <code>mre::middleware::session</code> middleware, which implements a
-traditional cookie-based session authentication scheme. This one is
-unfortunately a little more complicated to use. Starting off, you need to
-create a new datatype to store the session data and give a constructor to <code>mre</code>
-on how to make this per-request data:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>type data = @{
-</span><span class='line'>    mut session: option&lt;mre::session::session&gt;,
-</span><span class='line'>    mut user: option&lt;mre::user::user&gt;,
-</span><span class='line'>};
-</span><span class='line'>
-</span><span class='line'>let middleware = ~[
-</span><span class='line'>      mre::middleware::logger(io::stdout()),
-</span><span class='line'>      mre::middleware::session(es,
-</span><span class='line'>              @"blog",
-</span><span class='line'>              @"blog",
-</span><span class='line'>              @"session",
-</span><span class='line'>              |req: @request&lt;data&gt;, session, user| {
-</span><span class='line'>                      req.data.session = some(session);
-</span><span class='line'>                      req.data.user = some(user);
-</span><span class='line'>              }
-</span><span class='line'>      )
-</span><span class='line'>];
-</span><span class='line'>
-</span><span class='line'>let mre = mre::mre(zmq,
-</span><span class='line'>      some("F0D32575-2ABB-4957-BC8B-12DAC8AFF13A"),
-</span><span class='line'>      ~["tcp://127.0.0.1:9998"],
-</span><span class='line'>      ~["tcp://127.0.0.1:9999"],
-</span><span class='line'>      middleware,
-</span><span class='line'>      || @{ mut session: none, mut user: none }
-</span><span class='line'>);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Then you access this data through the <code>request.data</code> member:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>do app.post("^/$") |req, rep, _m| {
-</span><span class='line'>    let id = alt req.user {
-</span><span class='line'>      none { @"world" }
-</span><span class='line'>      some(user) { user.id() }
-</span><span class='line'>    };
-</span><span class='line'>
-</span><span class='line'>      rep.reply_html(200u,
-</span><span class='line'>              "&lt;html&gt;\n" +
-</span><span class='line'>        "&lt;body&gt;\n" +
-</span><span class='line'>        "&lt;h1&gt;Hello " + *id + "!&lt;/h1&gt;\n" + 
-</span><span class='line'>        "&lt;/body&gt;\n" +
-</span><span class='line'>        "&lt;/html&gt;")
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>See the <a href="https://github.com/erickt/mre/tree/master/examples/blog">blog</a> for a
-complete example.</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
+    
+      <a class="prev" href="/posts/3">&larr; Older</a>
     
     <a href="/blog/archives">Blog Archives</a>
     
@@ -5895,6 +5609,10 @@ complete example.</p>
     <section>
   <h1>Recent Posts</h1>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/02/26/serde-0-dot-7/">Serde 0.7</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2016/01/28/stateful/">Stateful, Part 2: How Stateful Cheats at Analysis</a>
@@ -5910,10 +5628,6 @@ complete example.</p>
     
       <li class="post">
         <a href="/blog/2015/08/07/serde-0-dot-5-0-many-many-changes/">Serde 0.5.0 - Many Many Changes</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/05/18/serde-0-dot-4-0-now-supports-macros-in-stable-rust/">Serde 0.4.0 - Syntax Extensions in Stable Rust and More!</a>
       </li>
     
   </ul>
