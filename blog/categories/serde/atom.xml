@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Serde | Chasing Rabbits]]></title>
   <link href="http://erickt.github.io/blog/categories/serde/atom.xml" rel="self"/>
   <link href="http://erickt.github.io/"/>
-  <updated>2016-02-26T23:11:25-08:00</updated>
+  <updated>2016-02-27T07:43:59-08:00</updated>
   <id>http://erickt.github.io/</id>
   <author>
     <name><![CDATA[Erick Tryzelaar]]></name>
@@ -58,7 +58,7 @@ as in:</li>
 </ul>
 
 
-<pre><code class="rust">#[serde(deny_unknown_fields)
+<pre><code class="rust">#[serde(deny_unknown_fields)]
 struct Point {
     x: usize,
     y: usize,
@@ -126,7 +126,7 @@ true, should skip serializing the field.</li>
 
 struct Point&lt;T: ShouldSkip&gt; {
     x: T,
-    #[serde(default="ShouldSkip::should_skip")]
+    #[serde(skip_serializing_if="ShouldSkip::should_skip")]
     y: T,
 }
 </code></pre>
